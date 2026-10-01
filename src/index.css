@@ -1,111 +1,134 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Solo tema claro: las clases dark: de shadcn solo aplican bajo un ancestro .dark (que no usamos). */
+@custom-variant dark (&:is(.dark *));
+
+/* ─── Sistema de diseño TripBus · Cordillera ─────────────────────────────── */
+@theme {
+  /* Sin paleta por defecto de Tailwind: solo existen los colores de Cordillera. */
+  --color-*: initial;
+
+  --color-verde-andino: #1f5c43; /* marca, botón primario, enlaces */
+  --color-verde-andino-hover: #174a36;
+  --color-verde-claro: #dcebe1;
+  --color-maiz: #e3a62f; /* acento / CTA de búsqueda: SIEMPRE con texto monte */
+  --color-maiz-hover: #cf9320;
+  --color-maiz-claro: #fbebc4; /* fondo de ofertas y aviso de temporizador */
+  --color-arena: #f5f0e6; /* fondo de página */
+  --color-superficie: #fffdf8; /* tarjetas, inputs, modales */
+  --color-borde: #e2d9c6;
+  --color-borde-fuerte: #8c8470;
+  --color-monte: #1c2b22; /* texto principal */
+  --color-texto-suave: #5c6b61; /* texto secundario */
+  --color-alerta: #a14a12; /* urgencia: "últimas sillas", timer < 2 min */
+  --color-error: #b3261e;
+  --color-error-claro: #f9dedc;
+  --color-silla-ocupada: #b9b1a0;
+  --color-foco: #e3a62f; /* anillo de foco */
+
+  /* Radios */
+  --radius-*: initial;
+  --radius-sm: 8px; /* sillas, chips */
+  --radius-md: 12px; /* botones, inputs */
+  --radius-lg: 18px; /* tarjetas */
+  --radius-xl: 28px; /* hero */
+  --radius-pill: 999px; /* etiquetas, botón "Ingresar" */
+
+  /* Sombra: SOLO para lo que flota (buscador sobre el hero, menús, modales). */
+  --shadow-card: 0 1px 2px rgba(28, 43, 34, 0.06), 0 8px 24px rgba(28, 43, 34, 0.08);
+
+  /* Familias */
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+
+  /* Escala tipográfica: tamaño / interlineado / peso.
+     display, titulo-1, titulo-2 y precio se usan con font-display (Fraunces). */
+  --text-display: 56px;
+  --text-display--line-height: 60px;
+  --text-display--font-weight: 500;
+  --text-titulo-1: 40px;
+  --text-titulo-1--line-height: 46px;
+  --text-titulo-1--font-weight: 500;
+  --text-titulo-2: 26px;
+  --text-titulo-2--line-height: 32px;
+  --text-titulo-2--font-weight: 500;
+  --text-precio: 32px;
+  --text-precio--line-height: 36px;
+  --text-precio--font-weight: 700;
+  --text-titulo-3: 20px;
+  --text-titulo-3--line-height: 28px;
+  --text-titulo-3--font-weight: 700;
+  --text-lead: 18px;
+  --text-lead--line-height: 27px;
+  --text-cuerpo: 16px;
+  --text-cuerpo--line-height: 24px;
+  --text-pequeno: 14px;
+  --text-pequeno--line-height: 20px;
+  --text-etiqueta: 12px;
+  --text-etiqueta--line-height: 16px;
+  --text-etiqueta--font-weight: 700;
+  --text-hora: 26px;
+  --text-hora--line-height: 30px;
+  --text-hora--font-weight: 700;
+}
+
+/* ─── Variables de shadcn/ui mapeadas a Cordillera ──────────────────────── */
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --background: var(--color-arena);
+  --foreground: var(--color-monte);
+  --card: var(--color-superficie);
+  --card-foreground: var(--color-monte);
+  --popover: var(--color-superficie);
+  --popover-foreground: var(--color-monte);
+  --primary: var(--color-verde-andino);
+  --primary-foreground: var(--color-arena);
+  --secondary: var(--color-verde-claro);
+  --secondary-foreground: var(--color-verde-andino);
+  --muted: var(--color-verde-claro);
+  --muted-foreground: var(--color-texto-suave);
+  --accent: var(--color-maiz);
+  --accent-foreground: var(--color-monte);
+  --destructive: var(--color-error);
+  --border: var(--color-borde);
+  --input: var(--color-borde);
+  --ring: var(--color-foco);
+  --radius: 12px;
+}
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
+@layer base {
+  * {
+    @apply border-border;
   }
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  body {
+    @apply bg-background font-sans text-cuerpo text-foreground antialiased;
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  /* Foco visible global: anillo foco de 2px con 2px de separación. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-foco;
   }
-}
-
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-}
-
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
-
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
-}
-
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
 }

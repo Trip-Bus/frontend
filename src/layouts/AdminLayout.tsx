@@ -1,28 +1,23 @@
 import { Link, Outlet } from 'react-router'
+import { Logo } from '@/shared/components/Logo'
 
 export function AdminLayout() {
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <header
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '16px 24px',
-          background: '#333',
-          color: '#fff',
-        }}
-      >
-        <Link to="/admin" style={{ color: 'inherit' }}>
-          TripBus · Admin
-        </Link>
-        <nav>
-          <Link to="/" style={{ color: 'inherit' }}>
-            Ver sitio
+    <div className="flex min-h-screen flex-col">
+      <header className="bg-verde-andino text-arena">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+          <Link to="/admin" className="flex items-center gap-3 rounded-sm">
+            <Logo variant="dark" size="sm" />
+            <span className="text-etiqueta tracking-wide uppercase">Admin</span>
           </Link>
-        </nav>
+          <nav className="flex items-center gap-4 text-pequeno font-medium">
+            <Link to="/" className="rounded-sm hover:underline">
+              Ver sitio
+            </Link>
+          </nav>
+        </div>
       </header>
-      <main style={{ flex: 1, padding: 24 }}>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
         <Outlet />
       </main>
     </div>

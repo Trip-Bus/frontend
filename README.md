@@ -27,6 +27,14 @@ npm run preview   # sirve el build localmente
 npm run lint      # linter (oxlint)
 ```
 
+## Sistema de diseño
+
+**TripBus · Cordillera**, implementado con Tailwind CSS v4 + shadcn/ui (Radix) e íconos `lucide-react`.
+
+- Los tokens (colores, radios, sombra, tipografía) viven en `src/index.css` dentro de `@theme`. La paleta por defecto de Tailwind está desactivada: usa solo clases de tokens, como `bg-verde-andino` o `text-texto-suave`.
+- Los componentes de shadcn están en `src/components/ui/` y son código propio (editables).
+- En desarrollo, abre **http://localhost:5173/dev/ui** para revisar paleta, tipografía y componentes. Esa ruta no existe en el build de producción.
+
 ## Variables de entorno
 
 | Variable       | Descripción                         | Valor local                |

@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   TripBus — sistema visual (ver lienzo "TripBus — Rediseño móvil", pantalla 10)
+   Una idea guía todo: el punto en la línea eres tú en tu ruta.
+   ========================================================================== */
+
+@theme {
+  /* Tipografías (autoalojadas con @fontsource-variable, ver main.tsx) */
+  --font-display: "Bricolage Grotesque Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, monospace;
+
+  /* Color de marca — contrastes medidos con WCAG */
+  --color-tinta: #0d1411;        /* texto y botones principales · 17:1 sobre el fondo */
+  --color-lima: #c8f560;         /* "tú": tu puesto, tu bus, confirmaciones · siempre con tinta encima */
+  --color-naranja: #ff5a1f;      /* "otros" y urgencia: drops, presencia · con tinta, nunca con blanco */
+  --color-fondo: #f4f5f0;        /* fondo de la app (claro para leer al sol) */
+  --color-superficie: #ffffff;   /* tarjetas */
+  --color-texto-2: #4b5550;      /* texto secundario · 7:1 */
+  --color-linea: #d9ddd5;        /* divisores (decorativo) */
+  --color-control: #8c948e;      /* bordes de campos y botones secundarios · 3:1 */
+  --color-libre-borde: #6f7872;  /* borde de puesto libre */
+  --color-vendido: #2a332f;      /* puesto vendido */
+  --color-presencia: #ffe4d8;    /* fondo "alguien lo está mirando" */
+  --color-presencia-borde: #b23a0e;
+  --color-alerta: #8a2c0a;       /* texto de aviso sobre --color-presencia */
+  --color-tinta-2: #1b2420;      /* superficies sobre fondo oscuro */
+  --color-tinta-texto-2: #a8b2ac;/* texto secundario sobre tinta · 8.6:1 */
+
+  /* Movimiento (skill "animate"): curvas fuertes; las de CSS por defecto son débiles */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Radios */
+  --radius-control: 14px;
+  --radius-boton: 18px;
+  --radius-tarjeta: 22px;
+  --radius-hoja: 28px;
+}
+
+/* --------------------------------------------------------------------------
+   Variables de shadcn/ui mapeadas a la marca: lo que se agregue con
+   `npx shadcn@latest add <componente>` sale ya con los colores de TripBus.
+   -------------------------------------------------------------------------- */
+:root {
+  --background: var(--color-fondo);
+  --foreground: var(--color-tinta);
+  --card: var(--color-superficie);
+  --card-foreground: var(--color-tinta);
+  --popover: var(--color-superficie);
+  --popover-foreground: var(--color-tinta);
+  --primary: var(--color-tinta);
+  --primary-foreground: #ffffff;
+  --secondary: #eef1e8;
+  --secondary-foreground: var(--color-tinta);
+  --muted: #eef1e8;
+  --muted-foreground: var(--color-texto-2);
+  --accent: var(--color-lima);
+  --accent-foreground: var(--color-tinta);
+  --destructive: #b23a0e;
+  --border: var(--color-linea);
+  --input: var(--color-control);
+  --ring: var(--color-tinta);
+  --radius: 14px;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* --------------------------------------------------------------------------
+   Base móvil (skill "mobile-native"): lo que separa "una web en el navegador"
+   de "una app instalada".
+   -------------------------------------------------------------------------- */
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent; /* sin destello gris al tocar */
+    -webkit-text-size-adjust: 100%;
+    overscroll-behavior: none;                /* el pull-to-refresh no secuestra la app */
+    background: var(--color-fondo);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--color-fondo);
+    color: var(--color-tinta);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+
+  /* 16 px mínimo: iOS hace zoom en campos más pequeños y no vuelve */
+  input, textarea, select {
+    font-size: 16px;
+  }
+
+  /* Controles: respuesta inmediata, sin selección de texto al mantener presionado */
+  button, a, [role="button"], [role="tab"] {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-tinta);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Retroalimentación al presionar (receta "Button press"): 160 ms, ease-out, scale(.97) */
+  .tap {
+    transition: transform 160ms var(--ease-out);
+  }
+  .tap:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Números que cambian (horas, precios, contadores): dígitos de ancho fijo */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Carriles horizontales con imán */
+  .carril {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 20px; /* el imán respeta el margen lateral de la pantalla */
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .carril::-webkit-scrollbar { display: none; }
+  .carril > * { scroll-snap-align: start; flex-shrink: 0; }
+
+  /* Contenido desplazable dentro de una hoja: rebota sin mover la página */
+  .scroll-hoja {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Márgenes seguros (notch e indicador de inicio) */
+  .pt-seguro { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  .pb-seguro { padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+
+  /* Entrada escalonada de listas (vistas ocasionales, nunca bloquea la interacción) */
+  .entra {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: tb-entra 300ms var(--ease-out) forwards;
+  }
+}
+
+@keyframes tb-entra {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes tb-latido {
+  0% { transform: scale(0.6); opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* Bienvenida (primera vez = presupuesto de "delight"): el punto recorre la ruta */
+@keyframes tb-viaje {
+  from { transform: translateX(0); }
+  /* % de translate = ancho del propio elemento: el contenedor mide "recorrido" y el punto va a su izquierda */
+  to { transform: translateX(100%); }
+}
+@keyframes tb-respira {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.94); opacity: 0.82; }
+}
+.tb-viaje { animation: tb-viaje 6s linear infinite; }
+.tb-respira { animation: tb-respira 2.4s var(--ease-in-out) infinite; }
+
+/* Movimiento reducido: menos y más suave, no cero */
+@media (prefers-reduced-motion: reduce) {
+  .entra { transform: none; animation: tb-entra 150ms ease forwards; }
+  .tb-latido { animation: none !important; opacity: 0.35; }
+  .tb-viaje, .tb-respira { animation: none !important; }
+}

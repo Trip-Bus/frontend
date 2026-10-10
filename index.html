@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover: la app pinta bajo el notch y rellena con env(safe-area-inset-*);
+         interactive-widget: el teclado de Android redimensiona el contenido como en iOS.
+         Nunca se desactiva el zoom (accesibilidad). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4f5f0" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1411" />
+    <meta name="color-scheme" content="light" />
+    <meta name="description" content="Compra tu tiquete de bus con el puesto en vivo y sigue tu viaje hasta que llegues." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="TripBus" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="icon" type="image/svg+xml" href="/icono.svg" />
+    <link rel="apple-touch-icon" href="/icono-180.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>TripBus</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

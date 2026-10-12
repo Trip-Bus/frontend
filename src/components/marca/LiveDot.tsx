@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils'
 
 type Props = {
-  /** lima = tú / en vivo; naranja = otras personas */
-  color?: 'lima' | 'naranja'
+  /** acento = tú / en vivo (color de la ciudad); naranja = otras personas */
+  color?: 'acento' | 'naranja'
   className?: string
 }
 
@@ -10,8 +10,8 @@ type Props = {
  * Punto "en vivo" con un eco que late. Es CSS puro (corre fuera del hilo principal,
  * no se traba mientras la app carga datos) y respeta prefers-reduced-motion.
  */
-export function LiveDot({ color = 'lima', className }: Props) {
-  const bg = color === 'lima' ? 'bg-lima' : 'bg-naranja'
+export function LiveDot({ color = 'acento', className }: Props) {
+  const bg = color === 'acento' ? 'bg-acento' : 'bg-naranja'
   return (
     <span aria-hidden="true" className={cn('relative inline-block size-2 shrink-0', className)}>
       <span

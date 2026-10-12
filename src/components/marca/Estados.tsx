@@ -72,7 +72,7 @@ export function Aviso({
       className={cn(
         'rounded-[18px] px-4 py-3 text-[14px] leading-snug',
         tono === 'alerta' && 'border-[1.5px] border-presencia-borde bg-presencia text-alerta',
-        tono === 'exito' && 'bg-lima font-semibold text-tinta',
+        tono === 'exito' && 'bg-acento font-semibold text-tinta',
         tono === 'neutro' && 'bg-superficie text-texto-2',
         className,
       )}

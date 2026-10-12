@@ -1,16 +1,16 @@
-import { Check, X } from 'lucide-react'
+import { Check, X, Zap } from 'lucide-react'
 import { NOMBRE_ESTADO, type CeldaVista, type EstadoPuesto, type PisoVista, type Puesto } from '@/features/mapaAsientos'
 import { cn } from '@/lib/utils'
 
 /**
  * Mapa del bus con la distribución real (filas × columnas del seatmap de Catalog).
  * Ningún estado se distingue solo por color (US-017): libre = número, tuyo = ✓,
- * alguien lo está apartando = punto naranja con borde punteado, vendido = ✕, oferta = número sobre naranja.
+ * alguien lo está apartando = punto naranja con borde punteado, vendido = ✕, oferta = rayo sobre naranja.
  */
 
 const ESTILO: Record<EstadoPuesto, string> = {
   libre: 'bg-superficie border-libre-borde text-tinta',
-  tuyo: 'bg-lima border-tinta text-tinta',
+  tuyo: 'bg-acento border-tinta text-tinta',
   ocupandose: 'bg-presencia border-presencia-borde border-dashed text-alerta',
   vendido: 'bg-vendido border-vendido text-[#a8b2ac]',
   oferta: 'bg-naranja border-tinta text-tinta',
@@ -45,6 +45,9 @@ export function PuestoBoton({
     >
       {estado === 'tuyo' ? (
         <Check className="size-[18px]" strokeWidth={3} aria-hidden="true" />
+      ) : estado === 'oferta' ? (
+        // Rayo (no número): con acentos cálidos (Cali) el naranja del drop se parece al "tuyo".
+        <Zap className="size-4" strokeWidth={2.5} aria-hidden="true" />
       ) : estado === 'vendido' ? (
         <X className="size-3.5" strokeWidth={2.5} aria-hidden="true" />
       ) : estado === 'ocupandose' ? (
@@ -123,7 +126,7 @@ export function PisoBus({
 export function LeyendaPuestos({ conOferta = false }: { conOferta?: boolean }) {
   const items: [string, string][] = [
     ['Libre', 'bg-superficie border-2 border-libre-borde'],
-    ['Tuyo', 'bg-lima border-2 border-tinta'],
+    ['Tuyo', 'bg-acento border-2 border-tinta'],
     ['Apartándose', 'bg-presencia border-2 border-dashed border-presencia-borde'],
     ['Vendido', 'bg-vendido'],
   ]

@@ -1,8 +1,10 @@
+import { useAcento } from '@/hooks/useAcento'
 import { Link } from 'react-router'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { buttonVariants } from '@/components/ui/button-variants'
 
 export function NoEncontrada() {
+  useAcento(null)
   return (
     <Pantalla className="items-center justify-center px-7 text-center">
       <div aria-hidden="true" className="relative mb-6 h-6 w-48">

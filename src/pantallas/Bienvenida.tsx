@@ -1,3 +1,4 @@
+import { useAcento } from '@/hooks/useAcento'
 import { ArrowRight, Check, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { LiveDot } from '@/components/marca/LiveDot'
@@ -7,6 +8,7 @@ import { buttonVariants } from '@/components/ui/button-variants'
 
 /** Pantalla 01. Explica en un vistazo la promesa: nadie más se sienta en tu puesto. */
 export function Bienvenida() {
+  useAcento(null)
   return (
     <Pantalla oscura className="px-6">
       <div className="flex h-8 items-center justify-between">
@@ -21,7 +23,7 @@ export function Bienvenida() {
         <span className="absolute top-[9px] left-0 size-2.5 rounded-full border-2 border-tinta-texto-2 bg-tinta" />
         <span className="absolute top-[9px] right-0 size-2.5 rounded-full bg-tinta-texto-2" />
         <span className="tb-viaje absolute top-[7px] left-0 block w-[calc(100%-14px)]">
-          <span className="block size-3.5 rounded-full bg-lima shadow-[0_0_0_5px_rgba(200,245,96,.18)]" />
+          <span className="block size-3.5 rounded-full bg-acento shadow-[0_0_0_5px_color-mix(in_srgb,var(--acento)_18%,transparent)]" />
         </span>
       </div>
 
@@ -29,7 +31,7 @@ export function Bienvenida() {
         className="entra mt-6 font-display text-[clamp(34px,10vw,42px)] leading-[1.02] font-extrabold tracking-[-0.03em]"
         style={{ animationDelay: '80ms' }}
       >
-        Nadie más se sienta en <span className="text-lima">tu puesto.</span>
+        Nadie más se sienta en <span className="text-acento">tu puesto.</span>
       </h1>
       <p className="entra mt-3.5 text-[17px] leading-[1.45] text-[#b9c2bd]" style={{ animationDelay: '130ms' }}>
         Ves los puestos en vivo, lo apartas 10 minutos mientras pagas y sigues tu bus hasta que llegues.
@@ -53,7 +55,7 @@ export function Bienvenida() {
         <Link
           to="/inicio"
           className={buttonVariants({
-            variante: 'lima',
+            variante: 'acento',
             ancho: 'completo',
             className: 'justify-between font-display text-[19px] font-extrabold',
           })}
@@ -89,7 +91,7 @@ function BusIlustracion() {
                 className={
                   'flex h-8 items-center justify-center rounded-[10px_10px_7px_7px] border-[1.5px] ' +
                   (mio
-                    ? 'border-lima bg-lima text-tinta'
+                    ? 'border-acento bg-acento text-tinta'
                     : vendido
                       ? 'border-[#2a332f] bg-[#2a332f] text-[#7e8983]'
                       : 'border-[#4a5650] bg-[#121a16]')

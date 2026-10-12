@@ -3,6 +3,8 @@ import { Navigate, useNavigate, useSearchParams } from 'react-router'
 import { useState } from 'react'
 import { aParametros, desdeParametros, hoy, type Busqueda } from '@/features/busqueda'
 import { BotonVolver } from '@/components/marca/BotonVolver'
+import { tamanoTitulo, visualDe } from '@/features/ciudadVisual'
+import { useAcento } from '@/hooks/useAcento'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/api'
@@ -37,6 +39,7 @@ export function Salidas() {
   const busqueda = desdeParametros(params)
   const [elegida, setElegida] = useState(0)
 
+  useAcento(busqueda?.destino)
   const resultado = useQuery({ ...consultaViajes(busqueda ?? { origen: '', destino: '', fecha: '' }), enabled: !!busqueda })
 
   // Tira de días: el precio más bajo de cada día (comparten cache con la búsqueda principal).
@@ -57,20 +60,15 @@ export function Salidas() {
   const sel = Math.min(elegida, Math.max(0, viajes.length - 1))
 
   return (
-    <Pantalla className="pb-0">
-      <header className="flex items-start gap-3 px-5">
-        <BotonVolver a="/inicio" />
-        <div className="flex min-w-0 flex-1 flex-col pt-px">
-          <h1 className="font-display text-[20px] leading-tight font-bold tracking-[-0.01em] [overflow-wrap:anywhere]">
-            {busqueda.origen} → {busqueda.destino}
-          </h1>
-          <span className="text-[13px] text-texto-2">
-            {fechaCorta(fechaDesdeApi(busqueda.fecha))} · {plural(busqueda.pasajeros, 'persona', 'personas')}
-          </span>
-        </div>
-      </header>
+    <Pantalla aSangre>
+      <FranjaCiudad
+        destino={busqueda.destino}
+        subtitulo={`Desde ${busqueda.origen}, ${fechaCorta(fechaDesdeApi(busqueda.fecha))}, ${plural(busqueda.pasajeros, 'persona', 'personas')}`}
+        conteo={resultado.isSuccess && viajes.some((v) => !v.agotado) ? plural(viajes.filter((v) => !v.agotado).length, 'salida con puestos', 'salidas con puestos') : null}
+      />
 
-      <div role="tablist" aria-label="Día del viaje" className="carril mt-3.5 gap-2 px-5">
+      <div className="relative -mt-6 flex min-h-0 flex-1 flex-col rounded-t-[28px] bg-fondo pt-4">
+      <div role="tablist" aria-label="Día del viaje" className="carril gap-2 px-5">
         {dias.map((fecha, i) => {
           const on = fecha === busqueda.fecha
           const datos = porDia[i]?.data?.filter((v) => !v.agotado)
@@ -118,6 +116,7 @@ export function Salidas() {
           </ul>
         </>
       )}
+      </div>
     </Pantalla>
   )
 }
@@ -158,7 +157,7 @@ function Regla({ viajes, elegida, alElegir }: { viajes: ResultadoViaje[]; elegid
               <span
                 className={cn(
                   'size-3.5 rounded-full border-[2.5px] transition-transform duration-200 ease-out',
-                  v.agotado ? 'border-control bg-fondo' : on ? 'border-tinta bg-lima' : 'border-tinta bg-tinta',
+                  v.agotado ? 'border-control bg-fondo' : on ? 'border-tinta bg-acento' : 'border-tinta bg-tinta',
                 )}
                 style={{ transform: on ? 'scale(1.35)' : 'scale(1)' }}
               />
@@ -296,5 +295,35 @@ function ErrorBusqueda({ error, reintentar }: { error: Error; reintentar: () => 
         Intentar de nuevo
       </Button>
     </section>
+  )
+}
+
+/** Franja superior con la foto del destino (diseño "ciudad de fondo"). Sin foto: franja tinta. */
+function FranjaCiudad({ destino, subtitulo, conteo }: { destino: string; subtitulo: string; conteo: string | null }) {
+  const v = visualDe(destino)
+  return (
+    <div className="relative h-[clamp(240px,36dvh,312px)] shrink-0 overflow-hidden bg-tinta text-white">
+      {v.foto && (
+        <img src={v.foto} alt="" decoding="async" className="absolute inset-0 size-full object-cover" style={{ objectPosition: v.pos.franja }} />
+      )}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0"
+        style={{ background: 'linear-gradient(180deg, rgba(13,20,17,.5) 0%, rgba(13,20,17,0) 38%, rgba(13,20,17,.78) 100%)' }}
+      />
+      <div className="pt-seguro absolute inset-x-0 top-0 flex items-center justify-between px-5">
+        <BotonVolver a="/inicio" className="border border-white/25 bg-tinta/40 text-white backdrop-blur-md" />
+        {conteo && (
+          <span className="flex h-8 items-center gap-2 rounded-full bg-tinta/55 px-3 text-[12px] font-semibold backdrop-blur-md">
+            <span aria-hidden="true" className="size-2 rounded-full bg-acento" />
+            {conteo}
+          </span>
+        )}
+      </div>
+      <div className="absolute inset-x-5 bottom-11 flex flex-col gap-1 [text-shadow:0_1px_14px_rgba(13,20,17,.5)]">
+        <span className="text-[15px] text-white/90">{subtitulo}</span>
+        <h1 className="font-display leading-[0.95] font-extrabold tracking-[-0.035em] break-words" style={{ fontSize: tamanoTitulo(destino, 52) }}>{destino}</h1>
+      </div>
+    </div>
   )
 }

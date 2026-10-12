@@ -3,6 +3,7 @@ import { AlertTriangle, Flag, MapPin, Play, Route as IconoRuta, Share2 } from 'l
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router'
 import { toast } from 'sonner'
+import { useAcento } from '@/hooks/useAcento'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Esqueleto, PantallaError } from '@/components/marca/Estados'
 import { LiveDot } from '@/components/marca/LiveDot'
@@ -52,6 +53,7 @@ export function EnVivo() {
     refetchInterval: respaldo * 2,
   })
   const s = seguimiento.data
+  useAcento(s?.destino)
 
   useTopico(s ? topicos.posicionBus(s.busId) : null, (m) => {
     const p = m.data as Posicion | null
@@ -127,7 +129,7 @@ export function EnVivo() {
   }
 
   return (
-    <Pantalla className="pt-0 pb-0">
+    <Pantalla aSangre>
       <div className="relative">
         <svg
           viewBox={`0 0 ${ANCHO} ${ALTO}`}
@@ -168,8 +170,8 @@ export function EnVivo() {
           })}
           {bus && mostrarBus && (
             <g transform={`translate(${bus.x} ${bus.y})`}>
-              {!sinSenal && <circle r="10" fill="#c8f560" className="tb-latido" style={{ animation: 'tb-latido 1.6s var(--ease-out) infinite', transformBox: 'fill-box', transformOrigin: 'center' }} />}
-              <circle r="11" fill={sinSenal ? '#8c948e' : '#c8f560'} stroke="#0d1411" strokeWidth="3" />
+              {!sinSenal && <circle r="10" className="tb-latido" style={{ fill: 'var(--acento)', animation: 'tb-latido 1.6s var(--ease-out) infinite', transformBox: 'fill-box', transformOrigin: 'center' }} />}
+              <circle r="11" style={{ fill: sinSenal ? '#8c948e' : 'var(--acento)' }} stroke="#0d1411" strokeWidth="3" />
               <circle r="3.5" fill="#0d1411" />
             </g>
           )}
@@ -202,7 +204,7 @@ export function EnVivo() {
             <span
               className={cn(
                 'mt-1 flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] font-bold',
-                retraso > 0 ? 'bg-naranja text-tinta' : 'bg-lima text-tinta',
+                retraso > 0 ? 'bg-naranja text-tinta' : 'bg-acento text-tinta',
               )}
             >
               {retraso > 0 ? `+${retraso} min` : 'A tiempo'}
@@ -228,12 +230,12 @@ export function EnVivo() {
               <li key={p.orden} className="flex items-center gap-3">
                 <span aria-hidden="true" className="relative flex w-4 flex-col items-center self-stretch">
                   <span className={cn('w-0.5 flex-1', i === 0 ? 'bg-transparent' : pasada ? 'bg-tinta' : 'bg-linea')} />
-                  <span className={cn('size-3 shrink-0 rounded-full border-[2.5px] border-tinta', pasada ? 'bg-tinta' : 'bg-superficie', aqui && 'size-4 bg-lima')} />
+                  <span className={cn('size-3 shrink-0 rounded-full border-[2.5px] border-tinta', pasada ? 'bg-tinta' : 'bg-superficie', aqui && 'size-4 bg-acento')} />
                   <span className={cn('w-0.5 flex-1', i === s.paradas.length - 1 ? 'bg-transparent' : avance && i < avance.ultimaParada ? 'bg-tinta' : 'bg-linea')} />
                 </span>
                 <span className="flex min-w-0 flex-1 items-center gap-2 py-2">
                   <span className={cn('truncate text-[15px]', i === 0 || i === s.paradas.length - 1 ? 'font-semibold' : '')}>{p.nombre}</span>
-                  {aqui && <span className="shrink-0 rounded-md bg-lima px-1.5 text-[11px] font-bold">Va por aquí</span>}
+                  {aqui && <span className="shrink-0 rounded-md bg-acento px-1.5 text-[11px] font-bold">Va por aquí</span>}
                 </span>
                 <span className="num shrink-0 text-[14px] text-texto-2">{horaCorta(sumarMin(p.horaProgramada, pasada ? 0 : retraso))}</span>
               </li>

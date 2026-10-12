@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { useAcento } from '@/hooks/useAcento'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { ContadorRetencion } from '@/components/marca/Contador'
 import { Esqueleto, PantallaError } from '@/components/marca/Estados'
@@ -55,6 +56,7 @@ export function Reserva() {
     queryFn: () => api.catalogo.itinerario(r!.itineraryId),
     enabled: !!r,
   })
+  useAcento(detalle.data?.destino)
   const oferta = useQuery({
     queryKey: ['oferta', r?.offerId],
     queryFn: () => api.ofertas.obtener(r!.offerId!),
@@ -196,7 +198,7 @@ export function Reserva() {
                   <span className="num text-[30px] leading-none font-bold">{codigoCiudad(d.origen)}</span>
                   <span className="num mt-1 text-[13px] text-tinta-texto-2">{horaCorta(d.fechaSalida)}</span>
                 </span>
-                <span aria-hidden="true" className="mb-4 h-0.5 flex-1 bg-[repeating-linear-gradient(90deg,#c8f560_0_6px,transparent_6px_11px)]" />
+                <span aria-hidden="true" className="mb-4 h-0.5 flex-1 bg-[repeating-linear-gradient(90deg,var(--acento)_0_6px,transparent_6px_11px)]" />
                 <span className="flex flex-col items-end">
                   <span className="num text-[30px] leading-none font-bold">{codigoCiudad(d.destino)}</span>
                   <span className="num mt-1 text-[13px] text-tinta-texto-2">{horaCorta(d.fechaLlegadaEstimada)}</span>
@@ -295,7 +297,7 @@ export function Reserva() {
         </div>
         <Button type="submit" form="form-viajeros" ancho="completo" className="justify-between" disabled={crear.isPending}>
           {crear.isPending ? 'Preparando el pago…' : 'Ir a pagar'}
-          {!crear.isPending && <ArrowRight className="size-[22px] text-lima" strokeWidth={2.5} aria-hidden="true" />}
+          {!crear.isPending && <ArrowRight className="size-[22px] text-acento" strokeWidth={2.5} aria-hidden="true" />}
         </Button>
       </footer>
     </Pantalla>

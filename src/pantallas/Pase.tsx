@@ -8,7 +8,9 @@ import { LiveDot } from '@/components/marca/LiveDot'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Button } from '@/components/ui/button'
+import { tamanoTitulo, visualDe } from '@/features/ciudadVisual'
 import { codigoReserva, guardarPase, paseGuardado } from '@/features/pases'
+import { useAcento } from '@/hooks/useAcento'
 import { codigoCiudad } from '@/lib/ciudades'
 import { api } from '@/lib/endpoints'
 import { fechaCorta, horaCorta } from '@/lib/formato'
@@ -25,6 +27,8 @@ export function Pase() {
     staleTime: 60_000,
   })
   const t = tiquete.data
+  useAcento(t?.destino)
+  const visual = visualDe(t?.destino)
   useEffect(() => {
     if (t) guardarPase(t)
   }, [t])
@@ -73,24 +77,60 @@ export function Pase() {
   }
 
   return (
-    <Pantalla oscura className="pb-0">
-      <div className="flex items-start gap-3 px-5">
-        <div className="flex min-w-0 flex-1 flex-col pt-1">
-          <h1 className="font-display text-[26px] leading-tight font-bold tracking-[-0.01em] text-white">
-            {cancelado ? 'Este viaje fue cancelado' : primerNombre ? `Listo, ${primerNombre}. Buen viaje.` : 'Buen viaje.'}
-          </h1>
-          <p className="mt-1 text-[14px] text-tinta-texto-2">
-            {cancelado ? 'La empresa canceló la salida. Te contactarán para el reembolso.' : 'Muestra este código al subir al bus.'}
-          </p>
+    <Pantalla oscura aSangre className="relative overflow-hidden">
+      <div aria-hidden="true" className="absolute inset-0">
+        {visual.foto && (
+          <img src={visual.foto} alt="" decoding="async" className="absolute inset-0 size-full object-cover" style={{ objectPosition: visual.pos.pase }} />
+        )}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: visual.foto
+              ? 'linear-gradient(180deg, rgba(13,20,17,.62) 0%, rgba(13,20,17,.25) 26%, rgba(13,20,17,.55) 48%, rgba(13,20,17,.92) 72%, #0d1411 100%)'
+              : '#0d1411',
+          }}
+        />
+      </div>
+
+      <div className="pt-seguro relative flex items-start gap-3 px-5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1 [text-shadow:0_1px_14px_rgba(13,20,17,.5)]">
+          {cancelado ? (
+            <>
+              <h1 className="font-display text-[30px] leading-tight font-bold tracking-[-0.01em]">Este viaje fue cancelado</h1>
+              <p className="text-[15px] text-white/90">La empresa canceló la salida. Te contactarán para el reembolso.</p>
+            </>
+          ) : (
+            <>
+              <span className="text-[15px] text-white/90">{primerNombre ? `Listo, ${primerNombre}. Llegas a` : 'Llegas a'}</span>
+              <h1 className="font-display leading-[0.95] font-extrabold tracking-[-0.035em] break-words" style={{ fontSize: tamanoTitulo(t.destino, 52, 96) }}>
+                {t.destino}
+              </h1>
+              <span className="text-[15px] text-white/90">
+                {llegada ? (
+                  <>
+                    {fechaCorta(llegada)} a las <span className="num">{horaCorta(llegada)}</span>
+                  </>
+                ) : (
+                  'Muestra este código al subir al bus.'
+                )}
+              </span>
+            </>
+          )}
         </div>
-        <Link to="/mis-tiquetes" aria-label="Cerrar" className="tap flex size-11 shrink-0 items-center justify-center rounded-control bg-tinta-2 text-white">
+        <Link
+          to="/mis-tiquetes"
+          aria-label="Cerrar"
+          className="tap flex size-11 shrink-0 items-center justify-center rounded-control border border-white/25 bg-tinta/45 text-white backdrop-blur-md"
+        >
           <X className="size-[22px]" aria-hidden="true" />
         </Link>
       </div>
 
-      <article aria-label="Pase de abordar" className={cn('mx-5 mt-4 overflow-hidden rounded-[26px] bg-superficie text-tinta', cancelado && 'opacity-60')}>
+      <div className="min-h-6 flex-1" />
+
+      <article aria-label="Pase de abordar" className={cn('relative mx-5 overflow-hidden rounded-[26px] bg-superficie text-tinta', cancelado && 'opacity-60')}>
         {enRuta ? (
-          <Link to={`/viaje/${t.itineraryId}/en-vivo`} className="flex items-center justify-between gap-3 bg-lima px-4 py-3">
+          <Link to={`/viaje/${t.itineraryId}/en-vivo`} className="flex items-center justify-between gap-3 bg-acento px-4 py-3">
             <span className="flex items-center gap-2 text-[14px] font-semibold">
               <LiveDot className="[&>span]:bg-tinta" />
               Tu bus va en camino
@@ -173,9 +213,8 @@ export function Pase() {
         </div>
       </article>
 
-      <div className="flex-1" />
-      <div className="flex gap-2.5 px-5 pt-4 pb-[calc(18px+env(safe-area-inset-bottom,0px))]">
-        <Link to={`/viaje/${t.itineraryId}/en-vivo`} className={buttonVariants({ variante: 'lima', ancho: 'completo' })}>
+      <div className="relative flex gap-2.5 px-5 pt-4 pb-[calc(18px+env(safe-area-inset-bottom,0px))]">
+        <Link to={`/viaje/${t.itineraryId}/en-vivo`} className={buttonVariants({ variante: 'acento', ancho: 'completo' })}>
           <MapPin className="size-5" aria-hidden="true" />
           {enRuta ? 'Ver dónde va el bus' : 'Ver el recorrido'}
         </Link>

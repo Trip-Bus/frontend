@@ -14,7 +14,7 @@ export const buttonVariants = cva(
     variants: {
       variante: {
         tinta: 'bg-tinta text-white hover:bg-[#1b2420]',
-        lima: 'bg-lima text-tinta hover:bg-[#bfeb52]',
+        acento: 'bg-acento text-tinta hover:brightness-95',
         naranja: 'bg-naranja text-tinta hover:bg-[#f2511a]',
         contorno: 'border-[1.5px] border-control bg-superficie text-tinta hover:bg-[#eef1e8]',
         fantasma: 'bg-transparent text-tinta hover:bg-[#eef1e8]',

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 
-/** Marca de texto: "tripbus." — el punto lima es el pasajero en su ruta. */
+/** Marca de texto: "tripbus." — el punto del acento es el pasajero en su ruta. */
 export function Logo({ className, claro = false }: { className?: string; claro?: boolean }) {
   return (
     <span
@@ -10,7 +10,7 @@ export function Logo({ className, claro = false }: { className?: string; claro?:
         className,
       )}
     >
-      tripbus<span className={claro ? 'text-lima' : 'text-[#8ab51f]'}>.</span>
+      tripbus<span className={claro ? 'text-acento' : 'text-[color-mix(in_srgb,var(--acento)_65%,#0d1411)]'}>.</span>
     </span>
   )
 }

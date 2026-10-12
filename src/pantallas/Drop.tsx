@@ -3,6 +3,7 @@ import { Check, Zap } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { useAcento } from '@/hooks/useAcento'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Aviso, Esqueleto, PantallaError } from '@/components/marca/Estados'
 import { EstadoVivo } from '@/components/marca/EstadoVivo'
@@ -44,6 +45,7 @@ export function Drop() {
     queryFn: () => api.catalogo.itinerario(o!.itineraryId),
     enabled: !!o,
   })
+  useAcento(detalle.data?.destino)
 
   useTopico(topicos.cupoOferta(offerId), (m) => {
     const c = m.data as Partial<CupoOferta> | null
@@ -151,7 +153,7 @@ export function Drop() {
         </div>
         <div className="flex flex-col items-end">
           {d && <span className="num text-[15px] text-tinta-texto-2 line-through">{dinero(d.precioBase)}</span>}
-          <span className="num text-[30px] leading-none font-bold text-lima">{dinero(o.precioOferta)}</span>
+          <span className="num text-[30px] leading-none font-bold text-acento">{dinero(o.precioOferta)}</span>
           {descuento != null && descuento > 0 && <span className="mt-1 text-[12px] font-bold text-naranja">−{descuento}%</span>}
         </div>
       </section>

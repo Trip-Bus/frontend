@@ -8,6 +8,7 @@ import { Aviso, Esqueleto } from '@/components/marca/Estados'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
 import { busquedaInicial, hoy } from '@/features/busqueda'
+import { useAcento } from '@/hooks/useAcento'
 import { textoError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
 import { fechaCorta, fechaDesdeApi, horaCorta, plural, sumarDias } from '@/lib/formato'
@@ -23,6 +24,7 @@ const ROL: Record<Rol, string> = { PASAJERO: 'Pasajero', CONDUCTOR: 'Conductor',
  */
 export function Panel() {
   const s = useSesion()!
+  useAcento(null)
   const inicial = busquedaInicial()
   const [origen, setOrigen] = useState(inicial.origen)
   const [destino, setDestino] = useState(inicial.destino)
@@ -71,7 +73,7 @@ export function Panel() {
           <h1 className="truncate font-display text-[24px] font-bold tracking-[-0.01em]">{usuario.data?.nombre ?? 'Panel'}</h1>
         </div>
         <Link to="/panel/validar" className="tap flex h-11 items-center gap-2 rounded-control bg-tinta px-3.5 text-[14px] font-semibold text-white">
-          <ScanLine className="size-5 text-lima" aria-hidden="true" />
+          <ScanLine className="size-5 text-acento" aria-hidden="true" />
           Validar pase
         </Link>
       </header>

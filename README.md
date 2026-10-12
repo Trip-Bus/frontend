@@ -77,6 +77,9 @@ src/
     pases.ts               Pases guardados para abrir sin señal
     seguimiento.ts         Proyección del mapa, avance sobre la ruta, retraso, simulador
     gps.ts                 Envío de GPS del conductor (real o simulado)
+    ciudadVisual.ts        "Ciudad de fondo": foto, acento y encuadre de cada destino
+  hooks/useAcento.ts       Pone el acento del destino en la variable CSS --acento
+  assets/ciudades/         Fotos de los destinos (Vite las empaqueta con hash)
   pantallas/               Una pantalla por archivo (panel/ para la empresa)
 ```
 
@@ -157,10 +160,26 @@ con jitter) y responde el heartbeat del servidor.
 
 ## Reglas de diseño (no negociables)
 
-**Color** — `tinta` para texto y botones principales, `lima` para todo lo del pasajero (tu puesto, tu
+**Color** — `tinta` para texto y botones principales, `acento` para todo lo del pasajero (tu puesto, tu
 bus, confirmaciones) **siempre con tinta encima**, `naranja` para "otros" y urgencia (drops, presencia)
 **nunca con texto blanco**. Texto secundario mínimo `texto-2` (7:1). Ningún estado se distingue solo por
 color: los puestos llevan número, ✓, punto o ✕. Todo pensado para leerse **al sol**.
+
+**Ciudad de fondo** — Inicio, Salidas y el Pase muestran la foto del destino, y el color `acento`
+cambia con la ciudad (variable CSS `--acento`, clases `bg-acento`, `text-acento`…). Cada pantalla de un
+viaje llama `useAcento(destino)`; las que no son de un viaje llaman `useAcento(null)` (vuelve al ámbar).
+
+| Ciudad | Acento | | Ciudad | Acento |
+|---|---|---|---|---|
+| Bogotá | `#f2b544` ámbar farol | | Bucaramanga | `#f4d35e` amarillo Sagrada Familia |
+| Medellín | `#5cc08a` verde metro | | Tunja | `#e3be86` arenisca |
+| Cali | `#f26b4d` coral bulevar | | Villavicencio | `#6cc6d9` turquesa de las letras |
+| Cartagena | `#f2a99b` rosa catedral | | Sin foto | `#ede6da` hueso, fondo tinta |
+
+Agregar una ciudad: la foto (≥ 1200 px de ancho, ≤ 180 KB, **con licencia libre y sin marca de
+agua**) en `src/assets/ciudades/` y una entrada en `features/ciudadVisual.ts` con su acento (claro: debe
+leerse texto tinta encima, ≥ 4.5:1), el encuadre de cada pantalla y el velo (más fuerte si la foto es de
+día). El nombre en grande nunca se parte: `tamanoTitulo()` lo encoge según el largo.
 
 **Tipo** — `font-display` (Bricolage Grotesque) para titulares; `font-sans` (Geist) para la interfaz;
 clase `num` (Geist Mono tabular) para horas, precios, puestos y contadores.

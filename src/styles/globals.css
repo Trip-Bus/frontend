@@ -3,7 +3,18 @@
 /* ==========================================================================
    TripBus — sistema visual (ver lienzo "TripBus — Rediseño móvil", pantalla 10)
    Una idea guía todo: el punto en la línea eres tú en tu ruta.
+   Acento por ciudad (lienzo "TripBus — Ciudad de fondo"): el color de "tú" (tu puesto, tu bus,
+   confirmaciones) sale de la foto del destino. Lo pone useAcento() en --acento; por defecto es el
+   ámbar farol de Bogotá. Todos los acentos son claros: siempre llevan texto tinta encima.
    ========================================================================== */
+
+:root {
+  --acento: #f2b544;
+}
+
+@theme inline {
+  --color-acento: var(--acento);
+}
 
 @theme {
   /* Tipografías (autoalojadas con @fontsource-variable, ver main.tsx) */
@@ -13,7 +24,6 @@
 
   /* Color de marca — contrastes medidos con WCAG */
   --color-tinta: #0d1411;        /* texto y botones principales · 17:1 sobre el fondo */
-  --color-lima: #c8f560;         /* "tú": tu puesto, tu bus, confirmaciones · siempre con tinta encima */
   --color-naranja: #ff5a1f;      /* "otros" y urgencia: drops, presencia · con tinta, nunca con blanco */
   --color-fondo: #f4f5f0;        /* fondo de la app (claro para leer al sol) */
   --color-superficie: #ffffff;   /* tarjetas */
@@ -57,7 +67,7 @@
   --secondary-foreground: var(--color-tinta);
   --muted: #eef1e8;
   --muted-foreground: var(--color-texto-2);
-  --accent: var(--color-lima);
+  --accent: var(--acento);
   --accent-foreground: var(--color-tinta);
   --destructive: #b23a0e;
   --border: var(--color-linea);
@@ -185,6 +195,13 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Fundido de la foto de la ciudad (Inicio): entra suave sobre la anterior */
+@keyframes tb-fundido {
+  from { opacity: 0; transform: scale(1.04); }
+  to { opacity: 1; transform: scale(1); }
+}
+.tb-fundido { animation: tb-fundido 700ms var(--ease-out) forwards; }
+
 @keyframes tb-latido {
   0% { transform: scale(0.6); opacity: 0.7; }
   100% { transform: scale(2.4); opacity: 0; }
@@ -208,4 +225,5 @@
   .entra { transform: none; animation: tb-entra 150ms ease forwards; }
   .tb-latido { animation: none !important; opacity: 0.35; }
   .tb-viaje, .tb-respira { animation: none !important; }
+  .tb-fundido { animation: tb-entra 200ms ease forwards; transform: none; }
 }

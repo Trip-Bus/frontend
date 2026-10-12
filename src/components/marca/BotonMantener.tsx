@@ -69,10 +69,10 @@ export function BotonMantener({
       )}
     >
       <span className="relative flex items-center justify-center gap-2.5">{sosteniendo ? textoSosteniendo : children}</span>
-      {/* Capa lima con el mismo texto en tinta, revelada de izquierda a derecha: el texto nunca queda tinta sobre tinta. */}
+      {/* Capa del acento con el mismo texto en tinta, revelada de izquierda a derecha: el texto nunca queda tinta sobre tinta. */}
       <span
         aria-hidden="true"
-        className="absolute inset-0 flex items-center justify-center gap-2.5 bg-lima text-tinta"
+        className="absolute inset-0 flex items-center justify-center gap-2.5 bg-acento text-tinta"
         style={{
           clipPath: `inset(0 ${sosteniendo ? 0 : 100}% 0 0)`,
           transition: sosteniendo ? `clip-path ${duracionMs}ms linear` : 'clip-path 220ms var(--ease-out)',

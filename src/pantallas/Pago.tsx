@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { BotonMantener } from '@/components/marca/BotonMantener'
+import { useAcento } from '@/hooks/useAcento'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { ContadorRetencion } from '@/components/marca/Contador'
 import { Esqueleto, PantallaError } from '@/components/marca/Estados'
@@ -52,6 +53,7 @@ export function Pago() {
     queryFn: () => api.catalogo.itinerario(r!.itineraryId),
     enabled: !!r,
   })
+  useAcento(detalle.data?.destino)
 
   const [numero, setNumero] = useState('')
   const [vence, setVence] = useState('')
@@ -151,8 +153,8 @@ export function Pago() {
     return (
       <Pantalla>
         <section className="flex flex-1 flex-col gap-4 px-5 pt-6">
-          <div role="status" className="entra flex items-center gap-3 rounded-tarjeta bg-lima p-4 text-tinta">
-            <span className="flex size-11 items-center justify-center rounded-full bg-tinta text-lima">
+          <div role="status" className="entra flex items-center gap-3 rounded-tarjeta bg-acento p-4 text-tinta">
+            <span className="flex size-11 items-center justify-center rounded-full bg-tinta text-acento">
               <Check className="size-6" strokeWidth={3} aria-hidden="true" />
             </span>
             <span className="flex flex-col">

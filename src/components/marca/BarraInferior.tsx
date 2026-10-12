@@ -31,7 +31,7 @@ export function BarraInferior({ activa }: { activa: 'viajar' | 'tiquetes' | 'pan
     cn(
       'tap flex items-center justify-center gap-2 rounded-2xl text-[14px]',
       equipo && 'flex-col gap-0.5 text-[12px]',
-      on ? 'bg-lima font-semibold text-tinta' : 'font-medium text-[#dde3df]',
+      on ? 'bg-acento font-semibold text-tinta' : 'font-medium text-[#dde3df]',
     )
 
   return (

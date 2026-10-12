@@ -10,16 +10,20 @@ export function Pantalla({
   children,
   className,
   oscura = false,
+  aSangre = false,
 }: {
   children: ReactNode
   className?: string
   oscura?: boolean
+  /** Foto o franja hasta el borde superior e inferior: la pantalla pone sus propios márgenes seguros. */
+  aSangre?: boolean
 }) {
   return (
     <div className={cn('min-h-dvh w-full', oscura ? 'bg-tinta' : 'bg-fondo')}>
       <main
         className={cn(
-          'pt-seguro pb-seguro mx-auto flex min-h-dvh w-full max-w-[480px] flex-col',
+          !aSangre && 'pt-seguro pb-seguro',
+          'mx-auto flex min-h-dvh w-full max-w-[480px] flex-col',
           oscura ? 'bg-tinta text-white' : 'bg-fondo text-tinta',
           className,
         )}

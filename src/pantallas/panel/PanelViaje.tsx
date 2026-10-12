@@ -3,6 +3,7 @@ import { Navigation, Radio, Send, Zap } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { useAcento } from '@/hooks/useAcento'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Aviso, Esqueleto, PantallaError } from '@/components/marca/Estados'
 import { LiveDot } from '@/components/marca/LiveDot'
@@ -47,6 +48,7 @@ export function PanelViaje() {
   const { itineraryId = '' } = useParams()
   const s = useSesion()!
   const detalle = useQuery({ queryKey: ['itinerario', itineraryId], queryFn: () => api.catalogo.itinerario(itineraryId) })
+  useAcento(detalle.data?.destino)
   const puedeOfertar = s.rol === 'OPERADOR' || s.rol === 'ADMIN'
 
   if (detalle.isError) return <PantallaError titulo="No pudimos abrir el viaje" error={detalle.error} reintentar={() => detalle.refetch()} volverA="/panel" />
@@ -231,7 +233,7 @@ function EnviarGps({ d }: { d: DetalleItinerario }) {
               onClick={() => setModo(on ? 'apagado' : o.modo)}
               className={cn(
                 'tap flex h-14 items-center justify-center gap-2 rounded-control border-[1.5px] text-[14px] font-semibold',
-                on ? 'border-tinta bg-lima text-tinta' : 'border-linea bg-superficie',
+                on ? 'border-tinta bg-acento text-tinta' : 'border-linea bg-superficie',
               )}
             >
               <o.icono className="size-5" aria-hidden="true" />

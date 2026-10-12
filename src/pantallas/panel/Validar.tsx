@@ -5,6 +5,7 @@ import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Aviso } from '@/components/marca/Estados'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
+import { useAcento } from '@/hooks/useAcento'
 import { textoError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
 import type { ValidacionTiquete } from '@/lib/tipos'
@@ -24,6 +25,7 @@ type DetectorCtor = new (opciones: { formats: string[] }) => Detector
  * tiene BarcodeDetector (Chrome en Android); si no, se pega el texto del código.
  */
 export function Validar() {
+  useAcento(null)
   const [codigo, setCodigo] = useState('')
   const [camara, setCamara] = useState(false)
   const [errorCamara, setErrorCamara] = useState<string | null>(null)
@@ -84,15 +86,15 @@ export function Validar() {
           camara ? (
             <div className="relative overflow-hidden rounded-tarjeta bg-tinta">
               <video ref={video} muted playsInline className="aspect-square w-full object-cover" />
-              <span aria-hidden="true" className="absolute inset-[18%] rounded-3xl border-4 border-lima" />
-              <Button variante="lima" tamano="md" className="absolute right-3 bottom-3" onClick={() => setCamara(false)}>
+              <span aria-hidden="true" className="absolute inset-[18%] rounded-3xl border-4 border-acento" />
+              <Button variante="acento" tamano="md" className="absolute right-3 bottom-3" onClick={() => setCamara(false)}>
                 <CameraOff className="size-5" aria-hidden="true" />
                 Cerrar cámara
               </Button>
             </div>
           ) : (
             <Button ancho="completo" onClick={() => setCamara(true)}>
-              <Camera className="size-5 text-lima" aria-hidden="true" />
+              <Camera className="size-5 text-acento" aria-hidden="true" />
               Escanear con la cámara
             </Button>
           )
@@ -122,9 +124,9 @@ export function Validar() {
         {r && (
           <section
             role="status"
-            className={cn('entra flex items-start gap-3 rounded-tarjeta p-4', r.valido ? 'bg-lima text-tinta' : 'border-2 border-presencia-borde bg-presencia text-alerta')}
+            className={cn('entra flex items-start gap-3 rounded-tarjeta p-4', r.valido ? 'bg-acento text-tinta' : 'border-2 border-presencia-borde bg-presencia text-alerta')}
           >
-            <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-full', r.valido ? 'bg-tinta text-lima' : 'bg-presencia-borde text-white')}>
+            <span className={cn('flex size-10 shrink-0 items-center justify-center rounded-full', r.valido ? 'bg-tinta text-acento' : 'bg-presencia-borde text-white')}>
               {r.valido ? <Check className="size-6" strokeWidth={3} aria-hidden="true" /> : <X className="size-6" strokeWidth={3} aria-hidden="true" />}
             </span>
             <span className="flex flex-col gap-0.5">

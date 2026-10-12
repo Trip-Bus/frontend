@@ -7,6 +7,7 @@ import { Aviso, Esqueleto } from '@/components/marca/Estados'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { pasesGuardados } from '@/features/pases'
+import { useAcento } from '@/hooks/useAcento'
 import { useAhora } from '@/hooks/useAhora'
 import { textoError } from '@/lib/api'
 import { codigoCiudad } from '@/lib/ciudades'
@@ -37,6 +38,7 @@ const ESTADO_TEXTO: Record<string, string> = {
 
 /** Mis tiquetes (US-033): próximos viajes con su pase, pagos pendientes y el historial. */
 export function MisTiquetes() {
+  useAcento(null)
   const ahora = useAhora(15_000)
   const reservas = useQuery({ queryKey: ['reservas'], queryFn: api.reservas.mias, refetchInterval: 30_000 })
   const lista = [...(reservas.data ?? [])].sort((a, b) => b.creadoEn.localeCompare(a.creadoEn))
@@ -154,7 +156,7 @@ function TarjetaReserva({
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <span className="flex items-center gap-2">
           <span className="num text-[22px] leading-none font-bold">{codigoCiudad(d?.origen)}</span>
-          <span aria-hidden="true" className={cn('h-0.5 w-6', tono === 'proximo' ? 'bg-lima' : 'bg-current')} />
+          <span aria-hidden="true" className={cn('h-0.5 w-6', tono === 'proximo' ? 'bg-acento' : 'bg-current')} />
           <span className="num text-[22px] leading-none font-bold">{codigoCiudad(d?.destino)}</span>
         </span>
         <span className={cn('text-[13px]', tono === 'proximo' ? 'text-tinta-texto-2' : 'text-texto-2')}>
@@ -175,7 +177,7 @@ function TarjetaReserva({
         {tono === 'proceso' && <span className="text-[13px] font-semibold">Esperando la respuesta del banco…</span>}
         {tono === 'anterior' && <span className="text-[13px]">{d?.estado === 'CANCELADO' ? 'Viaje cancelado' : (ESTADO_TEXTO[r.estado] ?? r.estado)}</span>}
       </div>
-      <ChevronRight className={cn('size-5 shrink-0', tono === 'proximo' && 'text-lima')} aria-hidden="true" />
+      <ChevronRight className={cn('size-5 shrink-0', tono === 'proximo' && 'text-acento')} aria-hidden="true" />
     </Link>
   )
 }
@@ -196,7 +198,7 @@ function SinConexion({ error }: { error: unknown }) {
               {fechaCorta(t.fechaSalida)} · {horaCorta(t.fechaSalida)} · puesto {t.seatNumbers.join(', ')}
             </span>
           </span>
-          <ChevronRight className="size-5 text-lima" aria-hidden="true" />
+          <ChevronRight className="size-5 text-acento" aria-hidden="true" />
         </Link>
       ))}
     </div>

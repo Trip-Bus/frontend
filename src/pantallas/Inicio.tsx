@@ -1,27 +1,34 @@
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftRight, ArrowRight, Minus, Plus, Search } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { ArrowRight, Minus, Plus, Search, Zap } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { aParametros, busquedaInicial, hoy, recordarBusqueda, rutasRecientes, type Busqueda } from '@/features/busqueda'
+import { aParametros, busquedaInicial, hoy, recordarBusqueda, type Busqueda } from '@/features/busqueda'
+import { tamanoTitulo, veloFoto, visualDe } from '@/features/ciudadVisual'
+import { useAcento } from '@/hooks/useAcento'
 import { useAhora } from '@/hooks/useAhora'
 import { BarraInferior } from '@/components/marca/BarraInferior'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
 import { Hoja } from '@/components/ui/hoja'
 import { api } from '@/lib/endpoints'
-import { dinero, fechaCorta, fechaDesdeApi, iniciales, nombreCiudad, reloj, sumarDias } from '@/lib/formato'
+import { dinero, duracion, fechaCorta, fechaDesdeApi, iniciales, nombreCiudad, reloj, sumarDias } from '@/lib/formato'
 import { useSesion } from '@/lib/sesion'
 import { cn } from '@/lib/utils'
 
-type Selector = 'origen' | 'destino' | 'fecha' | 'pasajeros' | null
+type Selector = 'origen' | 'cuando' | null
 
-/** Pantalla 02. Buscar completando una frase: "Voy de [Bogotá] a [Medellín] el [vie 9], [1 persona]." */
+const vidrio = 'border border-white/20 bg-tinta/55 backdrop-blur-md'
+
+/**
+ * Pantalla 02. Inicio "ciudad de fondo": la foto del destino a pantalla completa, el nombre en grande
+ * y un solo panel de búsqueda. Al cambiar de destino cambian la foto (fundido) y el color de acento.
+ */
 export function Inicio() {
   const navigate = useNavigate()
   const s = useSesion()
   const [busqueda, setBusqueda] = useState<Busqueda>(busquedaInicial)
   const [abierto, setAbierto] = useState<Selector>(null)
-  const [recientes] = useState(rutasRecientes)
+  useAcento(busqueda.destino)
 
   const ciudades = useQuery({ queryKey: ['ciudades'], queryFn: api.catalogo.ciudades, staleTime: Infinity })
   const usuario = useQuery({
@@ -30,137 +37,180 @@ export function Inicio() {
     enabled: !!s,
     staleTime: Infinity,
   })
+  const mismaCiudad = busqueda.origen.trim().toLowerCase() === busqueda.destino.trim().toLowerCase()
+  // Misma consulta (y caché) que la pantalla de salidas: el resumen sale de datos reales.
+  const viajes = useQuery({
+    queryKey: ['viajes', busqueda.origen, busqueda.destino, busqueda.fecha],
+    queryFn: ({ signal }) => api.catalogo.buscar(busqueda.origen, busqueda.destino, busqueda.fecha, signal),
+    enabled: !mismaCiudad,
+    staleTime: 45_000,
+  })
+
+  // El destino elegido siempre queda a la vista en el carrusel (también al cambiarlo desde "Desde").
+  const carril = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const chip = carril.current?.querySelector<HTMLElement>('[aria-checked="true"]')
+    const reducir = matchMedia('(prefers-reduced-motion: reduce)').matches
+    chip?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: reducir ? 'auto' : 'smooth' })
+  }, [busqueda.destino, ciudades.data])
 
   const cambiar = (parcial: Partial<Busqueda>) => setBusqueda((b) => ({ ...b, ...parcial }))
-  const mismaCiudad = busqueda.origen.trim().toLowerCase() === busqueda.destino.trim().toLowerCase()
-
-  const buscar = (b: Busqueda = busqueda) => {
-    recordarBusqueda(b)
-    navigate(`/salidas?${aParametros(b)}`)
+  const buscar = () => {
+    recordarBusqueda(busqueda)
+    navigate(`/salidas?${aParametros(busqueda)}`)
   }
 
+  const destinos = [
+    ...(ciudades.data ?? []).filter((c) => c !== busqueda.origen),
+  ]
+  if (!destinos.includes(busqueda.destino) && !mismaCiudad) destinos.unshift(busqueda.destino)
+
+  const disponibles = (viajes.data ?? []).filter((v) => !v.agotado)
+  const resumen = mismaCiudad
+    ? 'Elige un destino distinto al origen.'
+    : viajes.isPending
+      ? 'Buscando salidas…'
+      : viajes.isError
+        ? 'Toca "Ver salidas" para buscar de nuevo.'
+        : disponibles.length === 0
+          ? 'No hay puestos ese día. Prueba otra fecha.'
+          : `${duracion(Math.min(...disponibles.map((v) => v.duracionMinutos)))} de viaje, desde ${dinero(
+              Math.min(...disponibles.map((v) => v.ofertaActiva?.precioOferta ?? v.precioBase)),
+            )}`
+  const [dia, num] = fechaCorta(fechaDesdeApi(busqueda.fecha)).split(' ')
+  const cuando = `${busqueda.fecha === hoy() ? 'hoy' : busqueda.fecha === sumarDias(hoy(), 1) ? 'mañana' : `${dia} ${num}`}, ${
+    busqueda.pasajeros === 1 ? '1 persona' : `${busqueda.pasajeros} personas`
+  }`
+
   return (
-    <Pantalla>
-      <header className="flex items-center gap-3 px-5">
+    <Pantalla oscura aSangre className="relative overflow-hidden">
+      <FondoCiudad ciudad={busqueda.destino} />
+
+      <header className="pt-seguro relative flex items-center justify-between px-5 [text-shadow:0_1px_14px_rgba(13,20,17,.45)]">
+        <span className="font-display text-[22px] font-extrabold tracking-[-0.02em]">tripbus</span>
         {s ? (
-          <>
-            <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-full bg-tinta text-[14px] font-bold text-white">
-              {iniciales(usuario.data?.nombre)}
-            </span>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="text-[13px] text-texto-2">{saludo()}</span>
-              <span className="truncate text-[16px] font-semibold">{usuario.data?.nombre ?? ' '}</span>
-            </div>
-          </>
+          <span aria-label={usuario.data?.nombre ? `Sesión de ${usuario.data.nombre}` : 'Tu sesión'} role="img" className={cn('flex size-10 items-center justify-center rounded-full text-[14px] font-bold', vidrio)}>
+            {iniciales(usuario.data?.nombre)}
+          </span>
         ) : (
-          <>
-            <span className="flex-1 font-display text-[22px] font-extrabold tracking-[-0.02em]">
-              tripbus<span className="text-[#8ab51f]">.</span>
-            </span>
-            <Link to="/entrar?siguiente=/inicio" className="tap flex h-11 items-center rounded-control border-[1.5px] border-control bg-superficie px-4 text-[15px] font-semibold">
-              Entrar
-            </Link>
-          </>
+          <Link to="/entrar?siguiente=/inicio" className={cn('tap flex h-10 items-center rounded-full px-4 text-[15px] font-semibold', vidrio)}>
+            Entrar
+          </Link>
         )}
       </header>
 
-      <section aria-label="Buscar viaje" className="mx-5 mt-4 flex flex-col gap-[18px] rounded-[28px] bg-superficie p-5">
-        <p className="font-display text-[clamp(23px,7vw,27px)] leading-[1.55] font-bold tracking-[-0.02em]">
-          Voy de <Ficha onClick={() => setAbierto('origen')}>{busqueda.origen}</Ficha> a{' '}
-          <Ficha onClick={() => setAbierto('destino')}>{busqueda.destino}</Ficha> el{' '}
-          <Ficha onClick={() => setAbierto('fecha')}>{fechaCorta(fechaDesdeApi(busqueda.fecha)).split(' ').slice(0, 2).join(' ')}</Ficha>,{' '}
-          <Ficha onClick={() => setAbierto('pasajeros')}>
-            {busqueda.pasajeros === 1 ? '1 persona' : `${busqueda.pasajeros} personas`}
-          </Ficha>
-          .
-        </p>
-        {mismaCiudad && (
-          <p role="alert" className="-mt-2 text-[14px] font-medium text-presencia-borde">
-            El origen y el destino son la misma ciudad.
-          </p>
-        )}
-        <div className="flex gap-2.5">
-          <Button ancho="completo" className="justify-between" disabled={mismaCiudad} onClick={() => buscar()}>
-            Ver salidas
-            <ArrowRight className="size-[22px] text-lima" strokeWidth={2.5} aria-hidden="true" />
-          </Button>
-          <Button
-            variante="contorno"
-            className="size-14 px-0"
-            aria-label="Invertir origen y destino"
-            onClick={() => cambiar({ origen: busqueda.destino, destino: busqueda.origen })}
-          >
-            <ArrowLeftRight className="size-[22px]" aria-hidden="true" />
-          </Button>
+      <section aria-live="polite" className="relative mt-14 px-5 [text-shadow:0_1px_14px_rgba(13,20,17,.45)]">
+        <div key={busqueda.destino} className="entra flex flex-col gap-1.5">
+          <span className="text-[17px] font-medium text-white/90">Vas a</span>
+          <h1 className="font-display leading-[0.95] font-extrabold tracking-[-0.035em] break-words" style={{ fontSize: tamanoTitulo(busqueda.destino, 68) }}>
+            {busqueda.destino}
+          </h1>
+          <span className="mt-1.5 text-[16px] text-white/90">{resumen}</span>
         </div>
       </section>
 
-      {recientes.length > 0 && (
-        <section className="mt-6">
-          <h2 className="mx-5 mb-2.5 font-display text-[19px] font-bold tracking-[-0.01em]">Tus rutas</h2>
-          <div className="carril gap-2.5 px-5">
-            {recientes.map((r) => (
+      <div className="min-h-8 flex-1" />
+
+      <section aria-label="Buscar viaje" className="relative flex flex-col gap-3 px-4">
+        <DropActivo />
+        <div ref={carril} role="radiogroup" aria-label="Destino" className="carril -mx-4 gap-2 px-4">
+          {destinos.map((c) => {
+            const on = c === busqueda.destino
+            return (
               <button
-                key={`${r.origen}-${r.destino}`}
-                onClick={() => buscar({ ...busqueda, origen: r.origen, destino: r.destino })}
-                className="tap flex w-[150px] flex-col gap-1.5 rounded-[20px] bg-superficie p-3.5 text-left"
+                key={c}
+                role="radio"
+                aria-checked={on}
+                onClick={() => cambiar({ destino: c })}
+                className={cn(
+                  'h-10 rounded-full border-[1.5px] px-4 text-[15px] font-semibold backdrop-blur-md',
+                  'transition-[scale,background-color,border-color,color] duration-300 active:scale-[0.96]',
+                  on ? 'border-acento bg-acento text-tinta' : 'border-white/35 bg-tinta/50 text-white',
+                )}
               >
-                <span className="truncate text-[15px] font-semibold">{r.origen}</span>
-                <span className="truncate text-[13px] text-texto-2">→ {r.destino}</span>
+                {c}
               </button>
-            ))}
-          </div>
-        </section>
-      )}
+            )
+          })}
+          {ciudades.isPending && <span className="h-10 w-40 rounded-full bg-tinta/50" />}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => setAbierto('origen')} className={cn('tap flex h-14 flex-col justify-center rounded-2xl px-3.5 text-left', vidrio)}>
+            <span className="text-[12px] text-white/80">Desde</span>
+            <span className="truncate text-[16px] font-semibold">{busqueda.origen}</span>
+          </button>
+          <button onClick={() => setAbierto('cuando')} className={cn('tap flex h-14 flex-col justify-center rounded-2xl px-3.5 text-left', vidrio)}>
+            <span className="text-[12px] text-white/80">Cuándo</span>
+            <span className="truncate text-[16px] font-semibold">{cuando}</span>
+          </button>
+        </div>
+        <Button variante="acento" ancho="completo" className="justify-between transition-[transform,background-color] duration-300" disabled={mismaCiudad} onClick={buscar}>
+          <span className="truncate">Ver salidas a {busqueda.destino}</span>
+          <ArrowRight className="size-[22px]" strokeWidth={2.5} aria-hidden="true" />
+        </Button>
+      </section>
 
-      <DropActivo />
-
-      <div className="flex-1" />
-      <BarraInferior activa="viajar" />
+      <div className="relative">
+        <BarraInferior activa="viajar" />
+      </div>
 
       <SelectorCiudad
-        abierto={abierto === 'origen' || abierto === 'destino'}
-        titulo={abierto === 'destino' ? '¿A dónde vas?' : '¿Desde dónde sales?'}
+        abierto={abierto === 'origen'}
+        titulo="¿Desde dónde sales?"
         ciudades={ciudades.data ?? []}
         cargando={ciudades.isPending}
         alCerrar={() => setAbierto(null)}
         alElegir={(c) => {
-          cambiar(abierto === 'destino' ? { destino: c } : { origen: c })
+          // Si el origen nuevo es el destino actual, se intercambian.
+          cambiar(c === busqueda.destino ? { origen: c, destino: busqueda.origen } : { origen: c })
           setAbierto(null)
         }}
       />
-      <SelectorFecha
-        abierto={abierto === 'fecha'}
-        valor={busqueda.fecha}
+      <SelectorCuando
+        abierto={abierto === 'cuando'}
+        fecha={busqueda.fecha}
+        pasajeros={busqueda.pasajeros}
+        alCambiar={cambiar}
         alCerrar={() => setAbierto(null)}
-        alElegir={(f) => {
-          cambiar({ fecha: f })
-          setAbierto(null)
-        }}
-      />
-      <SelectorPasajeros
-        abierto={abierto === 'pasajeros'}
-        valor={busqueda.pasajeros}
-        alCerrar={() => setAbierto(null)}
-        alCambiar={(n) => cambiar({ pasajeros: n })}
       />
     </Pantalla>
   )
 }
 
-function saludo() {
-  const h = Number(new Intl.DateTimeFormat('es-CO', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/Bogota' }).format(new Date()))
-  return h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches'
-}
-
-function Ficha({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+/**
+ * Foto del destino a pantalla completa. Al cambiar de ciudad la nueva entra con un fundido sobre la
+ * anterior, y solo empieza cuando la foto terminó de cargar (nunca aparece a medias).
+ */
+function FondoCiudad({ ciudad }: { ciudad: string }) {
+  const [arriba, setArriba] = useState(ciudad)
+  const [abajo, setAbajo] = useState<string | null>(null)
+  if (ciudad !== arriba) {
+    setAbajo(arriba)
+    setArriba(ciudad)
+  }
+  const capas = [abajo, arriba].filter((c): c is string => !!c && !!visualDe(c).foto)
+  const v = visualDe(arriba)
   return (
-    <button
-      onClick={onClick}
-      className="tap inline-block max-w-full truncate rounded-xl bg-[#eef1e8] px-2.5 align-baseline leading-[40px] transition-[transform,background-color] hover:bg-[#e3e7db]"
-    >
-      {children}
-    </button>
+    <div aria-hidden="true" className="absolute inset-0">
+      {capas.map((c, i) => {
+        const vc = visualDe(c)
+        const esNueva = i === capas.length - 1 && c === arriba
+        return (
+          <img
+            key={c}
+            src={vc.foto!}
+            alt=""
+            decoding="async"
+            className={cn('absolute inset-0 size-full object-cover', esNueva && abajo !== null && 'opacity-0')}
+            style={{ objectPosition: vc.pos.portada }}
+            onLoad={(e) => {
+              if (esNueva) e.currentTarget.classList.add('tb-fundido')
+            }}
+          />
+        )
+      })}
+      <div className="absolute inset-0" style={{ background: v.foto ? veloFoto(v) : '#0d1411' }} />
+    </div>
   )
 }
 
@@ -174,17 +224,14 @@ function DropActivo() {
   const restante = activa.segundosRestantes - Math.floor((ahora - (ofertas.dataUpdatedAt || cargadoEn)) / 1000)
   if (restante <= 0) return null
   return (
-    <Link to={`/drop/${activa.offerId}`} className="tap mx-5 mt-4 flex items-center gap-3.5 rounded-tarjeta bg-naranja p-4 text-tinta">
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex h-[22px] items-center self-start rounded-md bg-tinta px-2 text-[11px] font-extrabold tracking-[0.08em] text-naranja">
-          DROP
-        </span>
-        <span className="text-[16px] font-bold">{dinero(activa.precioOferta)} por puesto</span>
-        <span className="text-[13px] font-semibold">
-          {activa.cupoRestante === 1 ? 'Queda 1' : `Quedan ${activa.cupoRestante}`} de {activa.cupoMax} · termina en
-        </span>
+    <Link to={`/drop/${activa.offerId}`} className={cn('tap flex h-12 items-center gap-2.5 rounded-2xl px-3.5', vidrio)}>
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-naranja text-tinta">
+        <Zap className="size-4" aria-hidden="true" />
       </span>
-      <span className="num shrink-0 text-[26px] font-bold">{reloj(restante)}</span>
+      <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">
+        Drop: {dinero(activa.precioOferta)} por puesto, {activa.cupoRestante === 1 ? 'queda 1' : `quedan ${activa.cupoRestante}`}
+      </span>
+      <span className="num shrink-0 text-[15px] font-bold">{reloj(restante)}</span>
     </Link>
   )
 }
@@ -253,30 +300,33 @@ function SelectorCiudad({
   )
 }
 
-function SelectorFecha({
+
+function SelectorCuando({
   abierto,
-  valor,
+  fecha,
+  pasajeros,
+  alCambiar,
   alCerrar,
-  alElegir,
 }: {
   abierto: boolean
-  valor: string
+  fecha: string
+  pasajeros: number
+  alCambiar: (parcial: Partial<Busqueda>) => void
   alCerrar: () => void
-  alElegir: (fecha: string) => void
 }) {
   const inicio = hoy()
   const dias = Array.from({ length: 21 }, (_, i) => sumarDias(inicio, i))
   return (
-    <Hoja abierta={abierto} alCambiar={(a) => !a && alCerrar()} titulo="¿Qué día viajas?">
-      <div className="grid grid-cols-3 gap-2 pb-2">
+    <Hoja abierta={abierto} alCambiar={(a) => !a && alCerrar()} titulo="¿Cuándo viajas?">
+      <div className="grid grid-cols-3 gap-2">
         {dias.map((d, i) => {
           const [dia, num, mes] = fechaCorta(fechaDesdeApi(d)).split(' ')
-          const on = d === valor
+          const on = d === fecha
           return (
             <button
               key={d}
               aria-pressed={on}
-              onClick={() => alElegir(d)}
+              onClick={() => alCambiar({ fecha: d })}
               className={cn(
                 'tap flex h-16 flex-col items-center justify-center rounded-2xl border-[1.5px] transition-[transform,background-color]',
                 on ? 'border-tinta bg-tinta text-white' : 'border-linea bg-superficie',
@@ -290,38 +340,19 @@ function SelectorFecha({
           )
         })}
       </div>
-    </Hoja>
-  )
-}
-
-function SelectorPasajeros({
-  abierto,
-  valor,
-  alCerrar,
-  alCambiar,
-}: {
-  abierto: boolean
-  valor: number
-  alCerrar: () => void
-  alCambiar: (n: number) => void
-}) {
-  return (
-    <Hoja
-      abierta={abierto}
-      alCambiar={(a) => !a && alCerrar()}
-      titulo="¿Cuántas personas?"
-      descripcion="Puedes apartar hasta 6 puestos en una compra."
-    >
-      <div className="flex items-center justify-between py-4">
-        <Button variante="contorno" tamano="icono" className="size-14" aria-label="Una persona menos" disabled={valor <= 1} onClick={() => alCambiar(valor - 1)}>
-          <Minus aria-hidden="true" />
-        </Button>
-        <span className="num text-[44px] font-bold" aria-live="polite">
-          {valor}
+      <div className="mt-4 flex items-center justify-between border-t border-linea py-4">
+        <span className="text-[16px] font-semibold">Personas</span>
+        <span className="flex items-center gap-3">
+          <Button variante="contorno" tamano="icono" aria-label="Una persona menos" disabled={pasajeros <= 1} onClick={() => alCambiar({ pasajeros: pasajeros - 1 })}>
+            <Minus aria-hidden="true" />
+          </Button>
+          <span className="num w-8 text-center text-[26px] font-bold" aria-live="polite">
+            {pasajeros}
+          </span>
+          <Button variante="contorno" tamano="icono" aria-label="Una persona más" disabled={pasajeros >= 6} onClick={() => alCambiar({ pasajeros: pasajeros + 1 })}>
+            <Plus aria-hidden="true" />
+          </Button>
         </span>
-        <Button variante="contorno" tamano="icono" className="size-14" aria-label="Una persona más" disabled={valor >= 6} onClick={() => alCambiar(valor + 1)}>
-          <Plus aria-hidden="true" />
-        </Button>
       </div>
       <Button ancho="completo" className="mb-2" onClick={alCerrar}>
         Listo
@@ -329,4 +360,3 @@ function SelectorPasajeros({
     </Hoja>
   )
 }
-

@@ -5,6 +5,7 @@ import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
 import { Campo } from '@/components/ui/input'
+import { useAcento } from '@/hooks/useAcento'
 import { ApiError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
 import { sesion } from '@/lib/sesion'
@@ -19,6 +20,7 @@ function destinoSeguro(valor: string | null): string {
 }
 
 export function Entrar() {
+  useAcento(null)
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const [modo, setModo] = useState<Modo>('entrar')

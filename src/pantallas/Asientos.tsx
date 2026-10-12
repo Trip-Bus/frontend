@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
+import { useAcento } from '@/hooks/useAcento'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { ContadorRetencion } from '@/components/marca/Contador'
 import { EstadoVivo } from '@/components/marca/EstadoVivo'
@@ -43,6 +44,7 @@ export function Asientos() {
   const [previa, setPrevia] = useState(() => retencionDeViaje(itineraryId))
 
   const detalle = useQuery({ queryKey: ['itinerario', itineraryId], queryFn: () => api.catalogo.itinerario(itineraryId) })
+  useAcento(detalle.data?.destino)
   const mapa = useQuery({ queryKey: ['mapa', itineraryId], queryFn: () => api.catalogo.mapa(itineraryId), staleTime: Infinity })
   const respaldo = useIntervaloRespaldo()
   const claveEstados = ['asientos', itineraryId, s?.userId ?? 'anonimo']
@@ -209,7 +211,7 @@ export function Asientos() {
             </button>
           </div>
           <ContadorRetencion hasta={previa.expiraEn} className="bg-tinta-2 text-white" />
-          <Button variante="lima" tamano="md" onClick={() => navigate(`/reserva/${previa.holdId}`)}>
+          <Button variante="acento" tamano="md" onClick={() => navigate(`/reserva/${previa.holdId}`)}>
             Seguir
           </Button>
         </section>
@@ -268,7 +270,7 @@ export function Asientos() {
           onClick={continuar}
         >
           {apartar.isPending ? 'Apartando…' : vigentes.length === 0 ? 'Toca un puesto libre' : s ? 'Apartar y seguir' : 'Entra para apartarlo'}
-          {vigentes.length > 0 && !apartar.isPending && <ArrowRight className="size-[22px] text-lima" strokeWidth={2.5} aria-hidden="true" />}
+          {vigentes.length > 0 && !apartar.isPending && <ArrowRight className="size-[22px] text-acento" strokeWidth={2.5} aria-hidden="true" />}
         </Button>
       </footer>
 

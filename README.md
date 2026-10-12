@@ -171,7 +171,7 @@ viaje llama `useAcento(destino)`; las que no son de un viaje llaman `useAcento(n
 
 | Ciudad | Acento | | Ciudad | Acento |
 |---|---|---|---|---|
-| Bogotá | `#f2b544` ámbar farol | | Bucaramanga | `#f4d35e` amarillo Sagrada Familia |
+| Bogotá | `#f2b544` ámbar farol | | Bucaramanga | `#f4d35e` amarillo taxi |
 | Medellín | `#5cc08a` verde metro | | Tunja | `#e3be86` arenisca |
 | Cali | `#f26b4d` coral bulevar | | Villavicencio | `#6cc6d9` turquesa de las letras |
 | Cartagena | `#f2a99b` rosa catedral | | Sin foto | `#ede6da` hueso, fondo tinta |

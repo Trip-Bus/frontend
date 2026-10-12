@@ -74,10 +74,10 @@ const CIUDADES: Record<string, VisualCiudad> = {
   bucaramanga: {
     foto: bucaramanga,
     acento: '#f4d35e',
-    nombreAcento: 'Amarillo Sagrada Familia',
-    pos: { portada: '88% 50%', franja: '50% 55%', pase: '88% 50%' },
-    velo: 0.5,
-    veloMedio: 0.25,
+    nombreAcento: 'Amarillo taxi',
+    pos: { portada: '24% 50%', franja: '30% 12%', pase: '24% 50%' },
+    velo: 0.62,
+    veloMedio: 0.38,
   },
   tunja: {
     foto: tunja,

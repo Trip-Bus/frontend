@@ -1,6 +1,8 @@
 import { useMutation } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
+import { useState, type ComponentProps, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
+import fotoBus from '@/assets/entrar-bus.jpg'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
@@ -31,40 +33,91 @@ export function Entrar() {
   }
 
   return (
-    <Pantalla className="px-5">
-      <header className="flex items-center">
-        <BotonVolver a="/" />
-      </header>
-      <h1 className="mt-6 font-display text-[32px] leading-[1.05] font-extrabold tracking-[-0.02em]">
-        {modo === 'entrar' ? 'Hola de nuevo.' : 'Crea tu cuenta.'}
-      </h1>
-      <p className="mt-2 text-[15px] text-texto-2">
-        {modo === 'entrar'
-          ? 'Entra para apartar puestos y ver tus tiquetes.'
-          : 'Toma un minuto. Tu documento va en el tiquete.'}
-      </p>
-
-      <div role="tablist" aria-label="Acceso" className="relative mt-6 grid h-12 grid-cols-2 rounded-2xl bg-[#e6e9e1] p-1">
-        <span
-          aria-hidden="true"
-          className="absolute top-1 left-1 h-10 w-[calc((100%-8px)/2)] rounded-xl bg-superficie shadow-[0_1px_3px_rgba(13,20,17,.12)] transition-transform duration-200 ease-in-out"
-          style={{ transform: modo === 'registro' ? 'translateX(100%)' : 'translateX(0)' }}
+    <Pantalla aSangre>
+      {/* Bus en ruta junto al mar (Momo Kim, Unsplash, licencia libre). Al crear cuenta se encoge. */}
+      <div
+        className={cn(
+          'relative shrink-0 overflow-hidden bg-[#6f93c4] transition-[height] duration-300 ease-out motion-reduce:transition-none',
+          modo === 'entrar' ? 'h-[clamp(260px,40dvh,340px)]' : 'h-[clamp(150px,22dvh,190px)]',
+        )}
+      >
+        <img
+          src={fotoBus}
+          alt=""
+          decoding="async"
+          className="absolute inset-0 size-full object-cover"
+          style={{ objectPosition: '100% 100%' }}
         />
-        {(['entrar', 'registro'] as const).map((m) => (
-          <button
-            key={m}
-            role="tab"
-            aria-selected={modo === m}
-            onClick={() => setModo(m)}
-            className={cn('relative text-[15px]', modo === m ? 'font-semibold' : 'font-medium text-texto-2')}
-          >
-            {m === 'entrar' ? 'Entrar' : 'Crear cuenta'}
-          </button>
-        ))}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0"
+          style={{ background: 'linear-gradient(180deg, rgba(13,20,17,.38) 0%, rgba(13,20,17,0) 34%)' }}
+        />
+        <div className="pt-seguro absolute inset-x-0 top-0 flex items-center justify-between px-5">
+          <BotonVolver a="/" className="border border-white/25 bg-tinta/40 text-white backdrop-blur-md" />
+          <span className="font-display text-[22px] font-extrabold tracking-[-0.02em] text-white [text-shadow:0_1px_12px_rgba(13,20,17,.45)]">
+            tripbus
+          </span>
+        </div>
       </div>
 
-      {modo === 'entrar' ? <FormEntrar alEntrar={alEntrar} /> : <FormRegistro alEntrar={alEntrar} />}
+      <div className="relative -mt-5 flex flex-1 flex-col rounded-t-[28px] bg-fondo px-5 pt-6 pb-[calc(18px+env(safe-area-inset-bottom,0px))]">
+        <h1 key={modo} className="entra font-display text-[32px] leading-[1.05] font-extrabold tracking-[-0.02em]">
+          {modo === 'entrar' ? 'Hola de nuevo.' : 'Crea tu cuenta.'}
+        </h1>
+        <p className="mt-2 text-[15px] text-texto-2">
+          {modo === 'entrar'
+            ? 'Entra para apartar puestos y ver tus tiquetes.'
+            : 'Toma un minuto. Tu documento va en el tiquete.'}
+        </p>
+
+        <div role="tablist" aria-label="Acceso" className="relative mt-5 grid h-12 grid-cols-2 rounded-2xl bg-[#e6e9e1] p-1">
+          <span
+            aria-hidden="true"
+            className="absolute top-1 left-1 h-10 w-[calc((100%-8px)/2)] rounded-xl bg-superficie shadow-[0_1px_3px_rgba(13,20,17,.12)] transition-transform duration-200 ease-out"
+            style={{ transform: modo === 'registro' ? 'translateX(100%)' : 'translateX(0)' }}
+          />
+          {(['entrar', 'registro'] as const).map((m) => (
+            <button
+              key={m}
+              role="tab"
+              aria-selected={modo === m}
+              onClick={() => setModo(m)}
+              className={cn('relative text-[15px]', modo === m ? 'font-semibold' : 'font-medium text-texto-2')}
+            >
+              {m === 'entrar' ? 'Entrar' : 'Crear cuenta'}
+            </button>
+          ))}
+        </div>
+
+        {modo === 'entrar' ? <FormEntrar alEntrar={alEntrar} /> : <FormRegistro alEntrar={alEntrar} />}
+      </div>
     </Pantalla>
+  )
+}
+
+/** Contraseña con botón para mostrarla: en el celular es fácil equivocarse sin verla. */
+function CampoContrasena(props: Omit<ComponentProps<typeof Campo>, 'type' | 'accion'>) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <Campo
+      {...props}
+      type={visible ? 'text' : 'password'}
+      autoCapitalize="none"
+      autoCorrect="off"
+      spellCheck={false}
+      accion={
+        <button
+          type="button"
+          aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+          aria-pressed={visible}
+          onClick={() => setVisible((v) => !v)}
+          className="tap flex size-11 items-center justify-center rounded-xl text-texto-2"
+        >
+          {visible ? <EyeOff className="size-5" aria-hidden="true" /> : <Eye className="size-5" aria-hidden="true" />}
+        </button>
+      }
+    />
   )
 }
 
@@ -79,7 +132,7 @@ function FormEntrar({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
   }
 
   return (
-    <form onSubmit={enviar} className="mt-6 flex flex-1 flex-col gap-4" noValidate>
+    <form onSubmit={enviar} className="mt-5 flex flex-1 flex-col gap-4" noValidate>
       <Campo
         etiqueta="Correo"
         type="email"
@@ -93,9 +146,8 @@ function FormEntrar({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
         onChange={(e) => setEmail(e.target.value)}
         placeholder="tu@correo.com"
       />
-      <Campo
+      <CampoContrasena
         etiqueta="Contraseña"
-        type="password"
         autoComplete="current-password"
         enterKeyHint="go"
         required
@@ -103,13 +155,8 @@ function FormEntrar({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
         onChange={(e) => setPassword(e.target.value)}
       />
       {login.error && <ErrorFormulario error={login.error} />}
-      {import.meta.env.DEV && (
-        <p className="rounded-control bg-[#eef1e8] p-3 text-[13px] text-texto-2">
-          Desarrollo: <span className="num">pasajero@tripbus.co</span> · <span className="num">TripBus2026</span>
-        </p>
-      )}
       <div className="flex-1" />
-      <Button type="submit" ancho="completo" disabled={login.isPending || !email || !password}>
+      <Button type="submit" variante="acento" ancho="completo" disabled={login.isPending || !email || !password}>
         {login.isPending ? 'Entrando…' : 'Entrar'}
       </Button>
     </form>
@@ -134,7 +181,7 @@ function FormRegistro({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
   }
 
   return (
-    <form onSubmit={enviar} className="mt-6 flex flex-1 flex-col gap-4" noValidate>
+    <form onSubmit={enviar} className="mt-5 flex flex-1 flex-col gap-4" noValidate>
       <Campo etiqueta="Nombre completo" autoComplete="name" enterKeyHint="next" value={datos.nombre} onChange={cambiar('nombre')} />
       <Campo
         etiqueta="Documento de identidad"
@@ -155,9 +202,8 @@ function FormRegistro({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
         value={datos.email}
         onChange={cambiar('email')}
       />
-      <Campo
+      <CampoContrasena
         etiqueta="Contraseña"
-        type="password"
         autoComplete="new-password"
         enterKeyHint="done"
         value={datos.password}
@@ -176,7 +222,7 @@ function FormRegistro({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
       </label>
       {registro.error && <ErrorFormulario error={registro.error} />}
       <div className="flex-1" />
-      <Button type="submit" ancho="completo" disabled={registro.isPending || !completo}>
+      <Button type="submit" variante="acento" ancho="completo" disabled={registro.isPending || !completo}>
         {registro.isPending ? 'Creando cuenta…' : 'Crear cuenta'}
       </Button>
     </form>

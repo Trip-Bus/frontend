@@ -39,7 +39,11 @@ El navegador **solo habla con su propio origen**, así no hay problemas de CORS:
 | La app llama a | En desarrollo (Vite) | En producción (NGINX de este repo) |
 |---|---|---|
 | `/api/trips/search` | → `http://localhost:8080/trips/search` | → `http://api-gateway:8080/trips/search` |
-| `/ws` (WebSocket) | → `ws://localhost:16007/ws` | → `http://realtime-gateway:16007/ws` |
+| `/ws` (WebSocket) | → `ws://localhost:16007/ws` | → `${REALTIME_URL}/ws` |
+
+En la rama `develop` del backend el API Gateway ya enruta `/ws` (puerto 18000) y el 18007 no se publica
+en PROD: ahí basta con `REALTIME_URL` igual a `API_GATEWAY_URL` (en desarrollo,
+`DEV_WS_TARGET=ws://localhost:18000`).
 
 Para cambiar destinos en desarrollo copia `.env.example` como `.env.local`.
 
@@ -57,33 +61,59 @@ src/
     api.ts                 fetch + errores ({ error: { code, message } }) + mensajes en español
     endpoints.ts           TODAS las llamadas al backend, agrupadas por microservicio
     sesion.ts              JWT de Identity (useSesion)
-    tiempoReal.ts          WebSocket: useTopico, reconexión con backoff, heartbeat
+    tiempoReal.ts          WebSocket: useTopico, connect por mensaje, respaldo REST, backoff, heartbeat
     formato.ts             Pesos, horas de Colombia, plurales, iniciales (con pruebas)
+    tarjeta.ts             Luhn, marca, formato y token sandbox (el número nunca sale del teléfono)
+    ciudades.ts            Códigos cortos de ciudad (BOG, MDE…)
   components/
     ui/                    Botón, Campo, Hoja inferior (base shadcn/ui)
-    marca/                 Pantalla, BarraInferior, LiveDot, Logo, BotonVolver
-  features/busqueda.ts     Estado de la búsqueda (URL + última búsqueda)
-  pantallas/               Una pantalla por archivo
+    marca/                 Pantalla, BarraInferior, LiveDot, Logo, BotonVolver, MapaBus, Contador,
+                           BotonMantener, EstadoVivo, Estados (esqueleto, error, aviso)
+  features/
+    busqueda.ts            Estado de la búsqueda (URL + última búsqueda)
+    mapaAsientos.ts        Distribución real del bus + estados → puestos (ventana/pasillo, sugerido)
+    retenciones.ts         Puesto apartado y último viajero (por dispositivo)
+    pagos.ts               Idempotency-Key por reserva
+    pases.ts               Pases guardados para abrir sin señal
+    seguimiento.ts         Proyección del mapa, avance sobre la ruta, retraso, simulador
+    gps.ts                 Envío de GPS del conductor (real o simulado)
+  pantallas/               Una pantalla por archivo (panel/ para la empresa)
 ```
 
-### Lo que ya funciona contra la API real
-
-- **01 Bienvenida** (`/`) — solo la primera vez; con sesión va directo al inicio.
-- **Entrar / Crear cuenta** (`/entrar`) — login, registro con política de datos (Ley 1581), redirección segura.
-- **02 Inicio** (`/inicio`) — búsqueda en una frase con hojas para ciudad (`GET /trips/cities`), fecha y
-  pasajeros; drop activo real (`GET /offers`); cerrar sesión (`POST /auth/logout`).
-- **03 Salidas** (`/salidas?origen&destino&fecha&pasajeros`) — `GET /trips/search`, precio más bajo de
-  cada día, regla de 24 h, ocupación, oferta, "+1" día, estados vacío, error y carga.
-
-### Lo que sigue (rutas creadas, con los endpoints listados en pantalla)
+### Pantallas (todas contra la API real)
 
 | Ruta | Pantalla | Historias |
 |---|---|---|
-| `/viaje/:itineraryId/asientos` | 04 Puestos en vivo | US-016 a 022, US-026 |
-| `/pago/:bookingId` | 05 Pago: mantener para pagar | US-031, 032, 034 |
-| `/pase/:ticketId`, `/mis-tiquetes` | 06 Pase de abordar | US-033 |
-| `/viaje/:itineraryId/en-vivo` | 07 Viaje en vivo | US-038, 039, 046, 047 |
-| `/drop/:offerId` | 08 Drop | US-054, 056, 058 |
+| `/` | 01 Bienvenida (solo la primera vez) | — |
+| `/entrar` | Entrar y crear cuenta (política de datos, Ley 1581) | US-001, US-096 |
+| `/inicio` | 02 Búsqueda en una frase + drop activo | US-007, US-014 |
+| `/salidas` | 03 Salidas del día: precio por día, regla de 24 h, ocupación | US-007, US-008, US-014 |
+| `/viaje/:id/asientos` | 04 Puestos en vivo: mapa real (1 o 2 pisos), estados por WebSocket, apartar 10 min, conflicto 409 con puesto sugerido | US-016 a 022, US-026 |
+| `/reserva/:holdId` | Datos del viajero y total, cuenta regresiva, pedir más tiempo, soltar | US-022, US-031 |
+| `/pago/:bookingId` | 05 Pago con tarjeta "mantén para pagar", Idempotency-Key, aprobado / rechazado / vencido | US-032, US-034 |
+| `/pase/:ticketId` | 06 Pase de abordar con QR (se guarda en el teléfono: abre sin señal), compartir el viaje | US-033 |
+| `/mis-tiquetes` | Próximos, por pagar, en proceso e historial | US-033 |
+| `/viaje/:id/en-vivo` | 07 Viaje en vivo (público): mapa de la ruta, bus, retraso, paradas, novedades | US-039, US-047 |
+| `/drop/:offerId` | 08 Drop: tiempo y cupo en vivo, "Apartar uno" con documento | US-056, US-058 |
+| `/panel` | Panel de la empresa (conductor, operador, admin): viajes de su empresa, datos demo (admin) | US-005, HT-01 |
+| `/panel/viaje/:id` | Reportar novedad, enviar GPS (del teléfono o simulado), crear / activar / cerrar drops | US-038, US-046, US-054 |
+| `/panel/validar` | Validar el pase al abordar (cámara con BarcodeDetector o texto del QR) | US-033 |
+
+Las rutas de compra exigen sesión; el panel exige rol CONDUCTOR, OPERADOR o ADMIN (US-005).
+
+### Probar la demo completa
+
+Con `DEMO_USERS_ENABLED=true` en el backend (contraseña `TripBus2026`):
+
+1. **Pasajero** (`pasajero@tripbus.co`): busca Bogotá → Medellín, elige puesto, llena datos y paga con
+   `4242 4242 4242 4242` (cualquier fecha futura, CVC 123). Con `4000 0000 0000 0002` el banco rechaza.
+2. **Concurrencia en vivo**: abre el mismo viaje en dos navegadores; cuando uno aparta, el otro lo ve
+   al instante. Si dos tocan el mismo puesto, uno recibe "Alguien tomó el 14…" con un puesto sugerido.
+3. **Operador** (`operador@tripbus.co`): Panel → un viaje → *Crear drop* (elige puestos, precio, cupo).
+   Arranca 15 s después; los pasajeros lo ven en el inicio y el cupo baja en vivo.
+4. **Conductor** (`conductor@tripbus.co`): Panel → un viaje → *Reportar novedad* (p. ej. retraso de 20 min)
+   y *Simular recorrido*. En `/viaje/:id/en-vivo` se ve el bus moverse y el "+20 min".
+5. **Abordaje**: Panel → *Validar pase* → pega el `qrCode` del tiquete o escanéalo con la cámara.
 
 ---
 
@@ -116,8 +146,12 @@ useTopico(topicos.asientos(itineraryId), (m) => {
 const estado = useEstadoTiempoReal() // 'en-vivo' | 'reconectando' | ... → mostrar "Sin conexión en vivo"
 ```
 
-El canal exige sesión (JWT). Una sola conexión para toda la app; reconecta con backoff exponencial
-(1 s a 30 s, con jitter) y responde el heartbeat del servidor.
+Una sola conexión para toda la app. Se abre `/ws` **sin token en la URL** y el JWT va en el primer
+mensaje (`{"type":"connect","token":…}`), que es lo único que acepta PROD (US-030). Sin sesión se manda
+`{"type":"connect"}`: en `develop` abre una sesión anónima para los tópicos públicos (US-039); en `main`
+responde `TOKEN_REQUIRED` y la pantalla sigue por REST. Si el canal no está "en vivo", cada pantalla
+consulta por REST cada 4–5 s (`useIntervaloRespaldo`). Reconecta con backoff exponencial (1 s a 30 s,
+con jitter) y responde el heartbeat del servidor.
 
 ---
 
@@ -180,6 +214,16 @@ Para levantarla junto al backend, agrega este servicio al `docker-compose.yml` d
       - api-gateway
       - realtime-gateway
 ```
+
+### Notas para el equipo de backend
+
+- **Carrera al crear ofertas en `main`:** con `inicio = ahora`, el scheduler puede activar la oferta antes
+  de que Seat Inventory reserve sus asientos y el cupo queda en 0. `develop` lo corrige (estado
+  `BORRADOR`, US-054). Mientras tanto el panel crea los drops con inicio 15 s en el futuro.
+- **`/itineraries/{id}/bus-position` en `main`** responde `PROGRAMADO` antes de la hora de salida aunque
+  el bus ya transmita; la pantalla en vivo muestra el bus si la última señal tiene menos de 5 min.
+- El frontend ya soporta los cambios de `develop` (WebSocket por el gateway, `connect` sin token en la
+  URL, seguimiento anónimo, oferta `BORRADOR`).
 
 **Pendiente en `API-gateway`:** como las peticiones llegan a través del NGINX del frontend, el gateway
 ve la IP del contenedor y no la del usuario, y el límite por IP quedaría compartido. Agrega en el bloque

@@ -13,3 +13,10 @@ export function useAhora(intervaloMs = 1000): number {
   }, [intervaloMs])
   return ahora
 }
+
+/** Segundos que faltan para `hasta` (nunca negativos); null si no hay fecha. */
+export function useSegundosRestantes(hasta: string | null | undefined): number | null {
+  const ahora = useAhora()
+  if (!hasta) return null
+  return Math.max(0, Math.floor((new Date(hasta).getTime() - ahora) / 1000))
+}

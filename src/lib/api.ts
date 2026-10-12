@@ -138,6 +138,28 @@ const MENSAJES: Record<string, string> = {
   OFFER_CLOSED: 'Esta oferta ya cerró.',
   ITINERARY_CANCELLED: 'Este viaje fue cancelado por la empresa.',
   ITINERARY_NOT_AVAILABLE: 'Este viaje ya no está disponible.',
+  HOLD_NOT_FOUND: 'Ese apartado ya no existe. Elige el puesto otra vez.',
+  HOLD_ALREADY_USED: 'Ese puesto ya está en otra reserva tuya. Revisa Mis tiquetes.',
+  HOLD_ALREADY_CONFIRMED: 'Esta compra ya quedó confirmada. Revisa Mis tiquetes.',
+  HOLD_INCONSISTENT: 'El puesto ya no está apartado. Elígelo otra vez.',
+  BOOKING_NOT_FOUND: 'No encontramos esa reserva.',
+  TICKET_NOT_FOUND: 'No encontramos ese tiquete.',
+  OFFER_NOT_FOUND: 'Esa oferta ya no existe.',
+  OFFER_DRAFT_EXPIRED: 'La oferta no alcanzó a publicarse. Créala de nuevo.',
+  OFFER_RESERVATION_MISMATCH: 'Ese puesto en oferta es de otra persona.',
+  OFFER_PRICE_NOT_LOWER: 'El precio de oferta debe ser menor que el precio normal.',
+  QUOTA_EXCEEDS_SEATS: 'El cupo no puede ser mayor que los puestos elegidos.',
+  OFFER_ENDS_AFTER_DEPARTURE: 'La oferta debe terminar antes de que salga el bus.',
+  INVALID_OFFER_WINDOW: 'La hora de fin debe ser después de la de inicio.',
+  NOT_YOUR_COMPANY: 'Ese viaje es de otra empresa.',
+  NO_ACTIVE_TRIP: 'El bus todavía no está en ruta.',
+  POSITION_NOT_FOUND: 'Aún no hay señal del bus.',
+  STALE_POSITION: 'La ubicación llegó tarde y se descartó.',
+  FUTURE_POSITION: 'La hora del teléfono está adelantada. Revisa la hora y vuelve a intentar.',
+  INVALID_COORDINATES: 'No pudimos leer tu ubicación.',
+  ITINERARY_NOT_FOUND: 'Ese viaje no existe.',
+  ITINERARY_ALREADY_CANCELLED: 'Ese viaje ya estaba cancelado.',
+  SEAT_MAP_NOT_FOUND: 'Este bus todavía no tiene mapa de puestos.',
   EMAIL_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
   DOCUMENTO_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
 }
@@ -145,4 +167,9 @@ const MENSAJES: Record<string, string> = {
 export function mensajeAmigable(e: ApiError): string {
   if (e.code === 'VALIDATION_ERROR') return e.message || 'Revisa los datos del formulario.'
   return MENSAJES[e.code] ?? (e.status >= 500 ? 'Algo falló de nuestro lado. Intenta de nuevo.' : e.message)
+}
+
+/** Texto para el usuario a partir de cualquier error (ApiError o no). */
+export function textoError(error: unknown, porDefecto = 'Algo salió mal. Intenta de nuevo.'): string {
+  return error instanceof ApiError ? error.paraUsuario : porDefecto
 }

@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { CircleUser, Search, Ticket } from 'lucide-react'
+import { CircleUser, LayoutGrid, Search, Ticket } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
  * Barra de navegación inferior. Se toca cientos de veces al día: el cambio de pestaña
  * NO se anima (skill "animate"), solo hay retroalimentación al presionar.
  */
-export function BarraInferior({ activa }: { activa: 'viajar' | 'tiquetes' }) {
+export function BarraInferior({ activa }: { activa: 'viajar' | 'tiquetes' | 'panel' }) {
   const s = useSesion()
   const navigate = useNavigate()
   const [cuenta, setCuenta] = useState(false)
@@ -26,9 +26,11 @@ export function BarraInferior({ activa }: { activa: 'viajar' | 'tiquetes' }) {
     },
   })
 
+  const equipo = !!s && s.rol !== 'PASAJERO'
   const item = (on: boolean) =>
     cn(
       'tap flex items-center justify-center gap-2 rounded-2xl text-[14px]',
+      equipo && 'flex-col gap-0.5 text-[12px]',
       on ? 'bg-lima font-semibold text-tinta' : 'font-medium text-[#dde3df]',
     )
 
@@ -36,7 +38,10 @@ export function BarraInferior({ activa }: { activa: 'viajar' | 'tiquetes' }) {
     <>
       <nav
         aria-label="Principal"
-        className="sticky bottom-[calc(14px+env(safe-area-inset-bottom,0px))] mx-5 mt-6 grid h-16 grid-cols-3 gap-1.5 rounded-[22px] bg-tinta p-1.5"
+        className={cn(
+          'sticky bottom-[calc(14px+env(safe-area-inset-bottom,0px))] mx-5 mt-6 grid h-16 gap-1.5 rounded-[22px] bg-tinta p-1.5',
+          equipo ? 'grid-cols-4' : 'grid-cols-3',
+        )}
       >
         <Link to="/inicio" aria-current={activa === 'viajar' ? 'page' : undefined} className={item(activa === 'viajar')}>
           <Search className="size-5" aria-hidden="true" />
@@ -46,6 +51,12 @@ export function BarraInferior({ activa }: { activa: 'viajar' | 'tiquetes' }) {
           <Ticket className="size-5" aria-hidden="true" />
           Tiquetes
         </Link>
+        {equipo && (
+          <Link to="/panel" aria-current={activa === 'panel' ? 'page' : undefined} className={item(activa === 'panel')}>
+            <LayoutGrid className="size-5" aria-hidden="true" />
+            Panel
+          </Link>
+        )}
         {s ? (
           <button onClick={() => setCuenta(true)} className={item(false)}>
             <CircleUser className="size-5" aria-hidden="true" />

@@ -15,3 +15,12 @@ export function Raiz() {
   const s = useSesion()
   return s ? <Navigate to="/inicio" replace /> : <Bienvenida />
 }
+
+/** US-005: solo personal de las empresas (conductor, operador) y admin entran al panel. */
+export function RequiereEquipo() {
+  const s = useSesion()
+  const { pathname } = useLocation()
+  if (!s) return <Navigate to={`/entrar?siguiente=${encodeURIComponent(pathname)}`} replace />
+  if (s.rol === 'PASAJERO') return <Navigate to="/inicio" replace />
+  return <Outlet />
+}

@@ -1,16 +1,19 @@
 import { solicitar } from './api'
 import type {
   AuthResponse,
+  CrearOfertaRequest,
   CupoOferta,
   DetalleItinerario,
   EstadosAsientos,
   LoginRequest,
   MapaAsientos,
   Novedad,
+  NovedadRequest,
   Oferta,
   Pago,
   PagoRequest,
   PasajeroRequest,
+  PosicionRequest,
   RegistroRequest,
   Reserva,
   ReservaOferta,
@@ -20,6 +23,7 @@ import type {
   Tiquete,
   Usuario,
   Uuid,
+  ValidacionTiquete,
 } from './tipos'
 
 /**
@@ -70,6 +74,9 @@ export const api = {
     pagar: (id: Uuid, pago: PagoRequest, idempotencyKey: string) =>
       solicitar<Pago>('POST', `/bookings/${id}/pay`, { auth: 'requerido', body: pago, idempotencyKey }),
     tiquete: (id: Uuid) => solicitar<Tiquete>('GET', `/tickets/${id}`, { auth: 'requerido' }),
+    /** Abordaje: conductor, operador o admin leen el QR del pasajero. */
+    validarTiquete: (qrCode: string) =>
+      solicitar<ValidacionTiquete>('POST', '/tickets/validate', { auth: 'requerido', body: { qrCode } }),
   },
 
   /* ------------------------------------------------ Flash Offers */
@@ -79,11 +86,27 @@ export const api = {
     cupo: (id: Uuid) => solicitar<CupoOferta>('GET', `/offers/${id}/quota`),
     apartar: (id: Uuid, docId: string) =>
       solicitar<ReservaOferta>('POST', `/offers/${id}/reservations`, { auth: 'requerido', body: { docId } }),
+    /** US-054 (operador o admin de la empresa del viaje). */
+    crear: (datos: CrearOfertaRequest) => solicitar<Oferta>('POST', '/offers', { auth: 'requerido', body: datos }),
+    activar: (id: Uuid) => solicitar<Oferta>('POST', `/offers/${id}/activate`, { auth: 'requerido' }),
+    cerrar: (id: Uuid) => solicitar<Oferta>('POST', `/offers/${id}/close`, { auth: 'requerido' }),
   },
 
   /* ------------------------------------------------ Fleet + Trip Events */
   viaje: {
     seguimiento: (itineraryId: Uuid) => solicitar<Seguimiento>('GET', `/itineraries/${itineraryId}/bus-position`),
     novedades: (itineraryId: Uuid) => solicitar<Novedad[]>('GET', `/trips/${itineraryId}/timeline`),
+    /** US-046 (conductor u operador de la empresa, o admin). */
+    reportar: (itineraryId: Uuid, novedad: NovedadRequest) =>
+      solicitar<Novedad>('POST', `/trips/${itineraryId}/events`, { auth: 'requerido', body: novedad }),
+    /** US-038: ingesta GPS (202, asíncrona). */
+    enviarPosicion: (posicion: PosicionRequest) =>
+      solicitar<void>('POST', '/telemetry/position', { auth: 'requerido', body: posicion }),
+  },
+
+  /* ------------------------------------------------ Administración */
+  admin: {
+    /** HT-01: datos de demostración (solo ADMIN). Idempotente. */
+    seed: () => solicitar<unknown>('POST', '/admin/seed', { auth: 'requerido' }),
   },
 }

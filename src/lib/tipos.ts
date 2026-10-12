@@ -215,7 +215,8 @@ export type Tiquete = {
 }
 
 /* ------------------------------------------------------------------ flash offers */
-export type EstadoOferta = 'PROGRAMADA' | 'ACTIVA' | 'AGOTADA' | 'CERRADA'
+/** BORRADOR: la oferta existe pero Seat Inventory aún no reserva sus asientos (rama develop, US-054). */
+export type EstadoOferta = 'BORRADOR' | 'PROGRAMADA' | 'ACTIVA' | 'AGOTADA' | 'CERRADA'
 
 export type Oferta = {
   offerId: Uuid
@@ -231,9 +232,18 @@ export type Oferta = {
   motivoCierre: string | null
 }
 
+export type CrearOfertaRequest = {
+  itineraryId: Uuid
+  seatNumbers: string[]
+  precioOferta: number
+  cupo: number
+  inicio: FechaIso
+  fin: FechaIso
+}
+
 export type CupoOferta = {
   offerId: Uuid
-  estado: string
+  estado: EstadoOferta
   cupoMax: number
   cupoRestante: number
   fin: FechaIso
@@ -278,6 +288,18 @@ export type Seguimiento = {
 
 export type TipoNovedad = 'INICIO' | 'LLEGADA_PARADA' | 'RETRASO' | 'DESVIO' | 'FIN'
 
+export type NovedadRequest = { tipo: TipoNovedad; descripcion?: string; detalle?: Record<string, unknown> }
+
+export type PosicionRequest = {
+  busId: Uuid
+  itineraryId: Uuid
+  lat: number
+  lng: number
+  velocidad?: number | null
+  rumbo?: number | null
+  timestamp?: FechaIso
+}
+
 export type Novedad = {
   tripEventId: Uuid
   itineraryId: Uuid
@@ -287,3 +309,7 @@ export type Novedad = {
   origen: string
   timestamp: FechaIso
 }
+
+export type ValidacionTiquete =
+  | { valido: true; ticketId: Uuid; bookingId: Uuid; itineraryId: Uuid; asientos: string; estado: string }
+  | { valido: false; motivo: 'FORMATO_INVALIDO' | 'FIRMA_INVALIDA' | 'TIQUETE_INEXISTENTE' | string }

@@ -4,16 +4,20 @@ import { sesion } from './sesion'
 /**
  * Cliente WebSocket del Realtime Gateway (repo Realtime-Gateway, RealtimeHandler.java).
  *
- * Protocolo:
- *   cliente → {"type":"subscribe","topic":"itinerario:{id}:asientos"} | unsubscribe | pong
- *   servidor → connected | subscribed | snapshot | event | unsubscribed | ping | error
- * Tópicos: itinerario:{id}:asientos · oferta:{id}:cupo · viaje:{id}:eventos · bus:{id}:posicion
+ * Protocolo (vale para main y para develop):
+ *   1. Se abre `/ws` SIN token en la URL (en PROD el ?token= se ignora: US-030).
+ *   2. Apenas abre, el cliente manda {"type":"connect","token":JWT}. Sin sesión manda
+ *      {"type":"connect"}: en develop eso abre una sesión anónima de solo lectura para los
+ *      tópicos públicos (US-039); en main responde TOKEN_REQUIRED y la app sigue por REST.
+ *   3. Con {"type":"connected"} recién se suscribe (antes respondería UNAUTHENTICATED).
+ *   cliente → subscribe | unsubscribe | ping | pong
+ *   servidor → connected | subscribed | snapshot | event | unsubscribed | ping | pong | error
  *
  * Reglas del documento de arquitectura:
  *  - Heartbeat: el servidor manda ping cada 20 s y cierra a los 45 s sin pong.
  *  - Reconexión con backoff exponencial: base 1 s, tope 30 s, con jitter.
  *  - Al (re)suscribirse el gateway envía un snapshot completo del tópico.
- *  - El canal exige JWT: sin sesión no se conecta (la app sigue funcionando por REST).
+ *  - Si el canal no está "en-vivo", cada pantalla consulta por REST cada pocos segundos.
  */
 
 export type EstadoConexion = 'sin-sesion' | 'conectando' | 'en-vivo' | 'reconectando'
@@ -24,7 +28,7 @@ export type MensajeTopico =
 
 type MensajeServidor =
   | MensajeTopico
-  | { type: 'connected'; userId: string; role: string; heartbeatSeconds: number; tokenExpiresAt?: string }
+  | { type: 'connected'; userId?: string; role?: string; anonymous?: boolean; heartbeatSeconds: number }
   | { type: 'subscribed' | 'unsubscribed'; topic: string }
   | { type: 'ping' | 'pong' }
   | { type: 'error'; code: string; message: string }
@@ -32,10 +36,10 @@ type MensajeServidor =
 type Manejador = (mensaje: MensajeTopico) => void
 
 export const topicos = {
-  asientos: (itineraryId: string) => `itinerario:${itineraryId}:asientos`,
-  cupoOferta: (offerId: string) => `oferta:${offerId}:cupo`,
-  novedades: (itineraryId: string) => `viaje:${itineraryId}:eventos`,
-  posicionBus: (busId: string) => `bus:${busId}:posicion`,
+  asientos: (itineraryId: string) => `itinerario:${itineraryId.toLowerCase()}:asientos`,
+  cupoOferta: (offerId: string) => `oferta:${offerId.toLowerCase()}:cupo`,
+  novedades: (itineraryId: string) => `viaje:${itineraryId.toLowerCase()}:eventos`,
+  posicionBus: (busId: string) => `bus:${busId.toLowerCase()}:posicion`,
 }
 
 function urlBase(): string {
@@ -60,9 +64,12 @@ class ConexionTiempoReal {
   private temporizador: ReturnType<typeof setTimeout> | null = null
   private vigia: ReturnType<typeof setTimeout> | null = null
   private tokenUsado: string | null = null
+  private autenticado = false
+  /** El servidor (rama main) no acepta sesiones anónimas: sin token no se intenta de nuevo. */
+  private anonimoRechazado = false
 
   constructor() {
-    // Login/logout: reconecta con el token nuevo o cierra.
+    // Login/logout: reconecta con el token nuevo (o como anónimo).
     sesion.suscribir(() => {
       if (sesion.token() !== this.tokenUsado) this.reiniciar()
     })
@@ -80,7 +87,7 @@ class ConexionTiempoReal {
     if (!set) {
       set = new Set()
       this.manejadores.set(topico, set)
-      this.enviar({ type: 'subscribe', topic: topico })
+      if (this.autenticado) this.enviar({ type: 'subscribe', topic: topico })
     }
     set.add(manejador)
     this.asegurarConexion()
@@ -91,7 +98,7 @@ class ConexionTiempoReal {
       actual.delete(manejador)
       if (actual.size === 0) {
         this.manejadores.delete(topico)
-        this.enviar({ type: 'unsubscribe', topic: topico })
+        if (this.autenticado) this.enviar({ type: 'unsubscribe', topic: topico })
         if (this.manejadores.size === 0) this.cerrar('sin-sesion')
       }
     }
@@ -106,18 +113,25 @@ class ConexionTiempoReal {
   private asegurarConexion() {
     if (this.ws || this.temporizador || this.manejadores.size === 0) return
     const token = sesion.token()
-    if (!token) {
+    if (!token && this.anonimoRechazado) {
       this.cambiarEstado('sin-sesion')
       return
     }
     this.tokenUsado = token
+    this.autenticado = false
     this.cambiarEstado(this.intento === 0 ? 'conectando' : 'reconectando')
 
-    const ws = new WebSocket(`${urlBase()}?token=${encodeURIComponent(token)}`)
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(urlBase())
+    } catch {
+      this.programarReconexion()
+      return
+    }
     this.ws = ws
 
     ws.onopen = () => {
-      this.manejadores.forEach((_, topico) => this.enviar({ type: 'subscribe', topic: topico }))
+      this.enviar(token ? { type: 'connect', token } : { type: 'connect' })
       this.vigilar()
     }
     ws.onmessage = (m) => {
@@ -134,6 +148,8 @@ class ConexionTiempoReal {
           return
         case 'connected':
           this.intento = 0
+          this.autenticado = true
+          this.manejadores.forEach((_, topico) => this.enviar({ type: 'subscribe', topic: topico }))
           this.cambiarEstado('en-vivo')
           return
         case 'snapshot':
@@ -141,6 +157,12 @@ class ConexionTiempoReal {
           this.manejadores.get(msg.topic)?.forEach((h) => h(msg))
           return
         case 'error':
+          if (!token && (msg.code === 'TOKEN_REQUIRED' || msg.code === 'UNAUTHENTICATED')) {
+            // Servidor sin seguimiento público: se queda en REST hasta que haya sesión.
+            this.anonimoRechazado = true
+            this.cerrar('sin-sesion')
+            return
+          }
           if (import.meta.env.DEV) console.warn('[tiempo real]', msg.code, msg.message)
           return
         default:
@@ -150,8 +172,9 @@ class ConexionTiempoReal {
     ws.onclose = () => {
       if (this.ws !== ws) return
       this.ws = null
+      this.autenticado = false
       this.limpiarVigia()
-      if (this.manejadores.size > 0 && sesion.token()) this.programarReconexion()
+      if (this.manejadores.size > 0 && (sesion.token() || !this.anonimoRechazado)) this.programarReconexion()
       else this.cambiarEstado('sin-sesion')
     }
     ws.onerror = () => ws.close()
@@ -187,12 +210,14 @@ class ConexionTiempoReal {
     this.limpiarVigia()
     const ws = this.ws
     this.ws = null
+    this.autenticado = false
     ws?.close()
     this.intento = 0
     this.cambiarEstado(estado)
   }
 
   private reiniciar() {
+    if (sesion.token()) this.anonimoRechazado = false
     this.cerrar('sin-sesion')
     this.asegurarConexion()
   }
@@ -218,4 +243,13 @@ export function useTopico(topico: string | null, alRecibir: (m: MensajeTopico) =
     if (!topico) return
     return tiempoReal.suscribir(topico, (m) => ref.current(m))
   }, [topico])
+}
+
+/**
+ * Cada cuánto consultar por REST según el canal: lento si hay "en vivo" (red de seguridad),
+ * rápido si no (US-094: la pantalla nunca se queda congelada).
+ */
+export function useIntervaloRespaldo(rapidoMs = 5_000, lentoMs = 30_000): number {
+  const estado = useEstadoTiempoReal()
+  return estado === 'en-vivo' ? lentoMs : rapidoMs
 }

@@ -31,6 +31,7 @@ export const router = createBrowserRouter([
           { path: '/pago/:bookingId', lazy: () => import('./pantallas/Pago').then((m) => ({ Component: m.Pago })) },
           { path: '/pase/:ticketId', lazy: () => import('./pantallas/Pase').then((m) => ({ Component: m.Pase })) },
           { path: '/mis-tiquetes', lazy: () => import('./pantallas/MisTiquetes').then((m) => ({ Component: m.MisTiquetes })) },
+          { path: '/cuenta', lazy: () => import('./pantallas/Cuenta').then((m) => ({ Component: m.Cuenta })) },
         ],
       },
       {

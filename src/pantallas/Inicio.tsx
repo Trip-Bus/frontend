@@ -89,9 +89,9 @@ export function Inicio() {
       <header className="pt-seguro relative flex items-center justify-between px-5 [text-shadow:0_1px_14px_rgba(13,20,17,.45)]">
         <span className="font-display text-[22px] font-extrabold tracking-[-0.02em]">tripbus</span>
         {s ? (
-          <span aria-label={usuario.data?.nombre ? `Sesión de ${usuario.data.nombre}` : 'Tu sesión'} role="img" className={cn('flex size-10 items-center justify-center rounded-full text-[14px] font-bold', vidrio)}>
+          <Link to="/cuenta" aria-label={usuario.data?.nombre ? `Tu cuenta, ${usuario.data.nombre}` : 'Tu cuenta'} className={cn('tap flex size-10 items-center justify-center rounded-full text-[14px] font-bold', vidrio)}>
             {iniciales(usuario.data?.nombre)}
-          </span>
+          </Link>
         ) : (
           <Link to="/entrar?siguiente=/inicio" className={cn('tap flex h-10 items-center rounded-full px-4 text-[15px] font-semibold', vidrio)}>
             Entrar

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { MapPin, Share2, X } from 'lucide-react'
+import { Copy, MapPin, Share2, X } from 'lucide-react'
 import { useEffect } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -61,6 +61,16 @@ export function Pase() {
   const embarque = new Date(new Date(t.fechaSalida).getTime() - 30 * 60_000).toISOString()
   const primerNombre = t.pasajeros[0]?.nombre.split(' ')[0]
   const enlaceViaje = `${globalThis.location?.origin ?? ''}/viaje/${t.itineraryId}/en-vivo`
+
+  // Para validar en el panel escribiendo el código, cuando la cámara del equipo no lee el QR.
+  const copiarCodigo = async () => {
+    try {
+      await navigator.clipboard.writeText(t.qrCode)
+      toast('Copiamos el código del pase.')
+    } catch {
+      toast('No pudimos copiar el código en este navegador.')
+    }
+  }
 
   const compartir = async () => {
     const texto = `Voy de ${t.origen} a ${t.destino} el ${fechaCorta(t.fechaSalida)}, salgo a las ${horaCorta(t.fechaSalida)}. Sigue el bus en vivo:`
@@ -209,6 +219,14 @@ export function Pase() {
                 {p.nombre} · {p.tipoDocumento} {p.numeroDocumento}
               </span>
             ))}
+            <button
+              type="button"
+              onClick={copiarCodigo}
+              className="tap mt-1 flex h-10 w-fit items-center gap-1.5 rounded-full border border-linea px-3.5 text-[13px] font-semibold"
+            >
+              <Copy className="size-4" aria-hidden="true" />
+              Copiar código
+            </button>
           </div>
         </div>
       </article>

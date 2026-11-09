@@ -85,10 +85,19 @@ export async function solicitar<T>(metodo: string, ruta: string, opciones: Opcio
     )
     // Token vencido o revocado: se cierra la sesión local para pedir login de nuevo.
     if (respuesta.status === 401 && token) sesion.cerrar()
+    // US-106: el rol exige la verificación en dos pasos y aún no está activa: la app lleva a activarla.
+    if (respuesta.status === 403 && apiError.code === 'MFA_SETUP_REQUIRED') avisarMfaObligatoria()
     throw apiError
   }
 
   return datos as T
+}
+
+/** Evento global: la app (main.tsx) lleva a /cuenta/seguridad cuando la 2FA es obligatoria. */
+export const EVENTO_MFA_OBLIGATORIA = 'tripbus:mfa-obligatoria'
+
+function avisarMfaObligatoria() {
+  globalThis.dispatchEvent?.(new Event(EVENTO_MFA_OBLIGATORIA))
 }
 
 export function construirQuery(query?: Opciones['query']): string {
@@ -160,6 +169,16 @@ const MENSAJES: Record<string, string> = {
   ITINERARY_NOT_FOUND: 'Ese viaje no existe.',
   ITINERARY_ALREADY_CANCELLED: 'Ese viaje ya estaba cancelado.',
   SEAT_MAP_NOT_FOUND: 'Este bus todavía no tiene mapa de puestos.',
+  ACCOUNT_LOCKED: 'Demasiados intentos fallidos. Tu cuenta quedó bloqueada unos minutos; intenta más tarde.',
+  INVALID_MFA_CODE: 'El código no coincide o ya venció. Revisa la app e intenta con el código nuevo.',
+  MFA_TOKEN_INVALID: 'El inicio de sesión venció. Escribe tu correo y contraseña de nuevo.',
+  MFA_SETUP_REQUIRED: 'Tu rol exige la verificación en dos pasos. Actívala para seguir.',
+  MFA_ALREADY_ENABLED: 'La verificación en dos pasos ya está activa.',
+  MFA_NOT_SET_UP: 'Primero escanea el código QR con tu app de autenticación.',
+  MFA_NOT_ENABLED: 'La verificación en dos pasos no está activa.',
+  INVALID_CURRENT_PASSWORD: 'La contraseña no es correcta.',
+  LAST_ADMIN: 'Eres el único administrador activo: no puedes eliminar tu cuenta.',
+  TOO_MANY_REQUESTS: 'Ya pediste varios correos. Espera un rato antes de pedir otro.',
   EMAIL_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
   DOCUMENTO_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
 }

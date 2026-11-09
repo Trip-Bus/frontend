@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, construirQuery, solicitar } from './api'
+import { ApiError, EVENTO_MFA_OBLIGATORIA, construirQuery, solicitar } from './api'
 import { esperaReconexion } from './tiempoReal'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -73,6 +73,19 @@ describe('cliente de la API', () => {
   it('204 devuelve undefined', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => respuesta(204)))
     await expect(solicitar('POST', '/auth/logout', { auth: 'ninguno' })).resolves.toBeUndefined()
+  })
+  it('avisa a la app cuando el rol exige activar la verificación en dos pasos (US-106)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () =>
+      respuesta(403, { error: { code: 'MFA_SETUP_REQUIRED', message: 'Tu rol exige la verificación en dos pasos' } }),
+    ))
+    // En Node globalThis no es un EventTarget: se observa el dispatchEvent que usa el navegador.
+    const dispatch = vi.fn()
+    vi.stubGlobal('dispatchEvent', dispatch)
+    const e = await fallo(solicitar('GET', '/bookings'))
+    expect(e.code).toBe('MFA_SETUP_REQUIRED')
+    expect(e.paraUsuario).toContain('verificación en dos pasos')
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    expect((dispatch.mock.calls[0][0] as Event).type).toBe(EVENTO_MFA_OBLIGATORIA)
   })
 })
 

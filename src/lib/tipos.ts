@@ -20,7 +20,53 @@ export type AuthResponse = {
   expiresAt: FechaIso
   userId: Uuid
   rol: Rol
+  refreshToken?: string | null
+  refreshExpiresAt?: FechaIso | null
 }
+
+/** US-106: la cuenta tiene verificación en dos pasos: el login no trae tokens, solo el desafío (5 min, un uso). */
+export type MfaRequerido = { mfaRequired: true; mfaToken: string }
+
+export type RespuestaLogin = AuthResponse | MfaRequerido
+
+/** Segundo paso del login: el código de 6 dígitos de la app o un código de recuperación. */
+export type SegundoPasoRequest = { mfaToken: string; code?: string; recoveryCode?: string }
+
+/** GET /users/me (US-128). */
+export type Perfil = {
+  id: Uuid
+  email: string
+  emailVerificado: boolean
+  nombre: string
+  telefono: string | null
+  documentoIdentidad: string | null
+  rol: Rol
+  companyId: Uuid | null
+  fechaCreacion: FechaIso
+}
+
+export type PerfilRequest = { nombre: string; telefono: string | null }
+
+export type CambiarPasswordRequest = { passwordActual: string; passwordNueva: string }
+
+/** GET /users/me/data (US-131, Ley 1581): lo que TripBus guarda de la persona. */
+export type MisDatos = {
+  perfil: Record<string, unknown>
+  rol: Rol
+  companyId: Uuid | null
+  emailVerificado: boolean
+  emailVerificadoEn: FechaIso | null
+  consentimientos: Record<string, unknown>[]
+  sesionesActivas: Record<string, unknown>[]
+  verificacionDosPasos: boolean
+  generadoEn: FechaIso
+}
+
+/** POST /users/me/2fa/setup: secreto TOTP y el enlace otpauth:// que se muestra como QR. */
+export type ConfiguracionMfa = { secret: string; otpauthUri: string }
+
+/** POST /users/me/2fa/enable: 10 códigos de un solo uso, se muestran una sola vez. */
+export type CodigosRecuperacion = { recoveryCodes: string[] }
 
 export type LoginRequest = { email: string; password: string }
 

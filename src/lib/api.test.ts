@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, EVENTO_MFA_OBLIGATORIA, construirQuery, solicitar } from './api'
+import {
+  ApiError,
+  EVENTO_CUENTA_BLOQUEADA,
+  EVENTO_CUENTA_SUSPENDIDA,
+  EVENTO_MFA_OBLIGATORIA,
+  EVENTO_SESION_EXPIRADA,
+  construirQuery,
+  solicitar,
+  textoError,
+} from './api'
 import { sesion } from './sesion'
 import { esperaReconexion } from './tiempoReal'
 
@@ -123,6 +132,90 @@ describe('cliente de la API', () => {
     expect(e.paraUsuario).toContain('verificación en dos pasos')
     expect(dispatch).toHaveBeenCalledTimes(1)
     expect((dispatch.mock.calls[0][0] as Event).type).toBe(EVENTO_MFA_OBLIGATORIA)
+  })
+
+  it('cierra una sesión sin refresh token tras un 401 y emite el evento de expiración', async () => {
+    sesion.iniciar({
+      accessToken: 'access',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      userId: 'user-1',
+      rol: 'PASAJERO',
+    })
+    const dispatch = vi.fn()
+    vi.stubGlobal('dispatchEvent', dispatch)
+    vi.stubGlobal('fetch', vi.fn(async () => respuesta(401, { error: { code: 'TOKEN_INVALID_OR_EXPIRED', message: 'expired' } })))
+
+    await expect(fallo(solicitar('GET', '/private'))).resolves.toMatchObject({ status: 401 })
+    expect(sesion.obtener()).toBeNull()
+    expect(dispatch.mock.calls.map(([evento]) => (evento as Event).type)).toContain(EVENTO_SESION_EXPIRADA)
+  })
+
+  it('maneja bloqueo y suspensión con sus eventos globales', async () => {
+    sesion.iniciar({
+      accessToken: 'access',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      userId: 'user-1',
+      rol: 'PASAJERO',
+    })
+    const dispatch = vi.fn()
+    vi.stubGlobal('dispatchEvent', dispatch)
+    const fetchMock = vi.fn(async () => respuesta(423, { error: { code: 'ACCOUNT_LOCKED', message: 'locked' } }, { 'Retry-After': '8' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const bloqueada = await fallo(solicitar('GET', '/private'))
+    expect(bloqueada.reintentarEn).toBe(8)
+    expect((dispatch.mock.calls[0][0] as Event).type).toBe(EVENTO_CUENTA_BLOQUEADA)
+    expect((dispatch.mock.calls[0][0] as CustomEvent).detail).toEqual({ reintentarEn: 8 })
+
+    fetchMock.mockImplementationOnce(async () =>
+      respuesta(403, { error: { code: 'ACCOUNT_SUSPENDED', message: 'suspended' } }),
+    )
+    await expect(fallo(solicitar('GET', '/private'))).resolves.toMatchObject({ status: 403 })
+    expect(sesion.obtener()).toBeNull()
+    expect(dispatch.mock.calls.map(([evento]) => (evento as Event).type)).toContain(EVENTO_CUENTA_SUSPENDIDA)
+  })
+
+  it('cierra sesión si el refresh está revocado y valida la respuesta del refresh', async () => {
+    const iniciarConRefresh = () => sesion.iniciar({
+      accessToken: 'access-old',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      refreshToken: 'refresh-old',
+      refreshExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      userId: 'user-1',
+      rol: 'PASAJERO',
+    })
+    const dispatch = vi.fn()
+    vi.stubGlobal('dispatchEvent', dispatch)
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/auth/refresh')
+        ? respuesta(401, { error: { code: 'INVALID_REFRESH_TOKEN', message: 'revoked' } })
+        : respuesta(401, { error: { code: 'TOKEN_INVALID_OR_EXPIRED', message: 'expired' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    iniciarConRefresh()
+    await fallo(solicitar('GET', '/private'))
+    expect(sesion.obtener()).toBeNull()
+    expect(dispatch.mock.calls.map(([evento]) => (evento as Event).type)).toContain(EVENTO_SESION_EXPIRADA)
+
+    iniciarConRefresh()
+    fetchMock.mockImplementation(async (url: string) =>
+      url.endsWith('/auth/refresh')
+        ? respuesta(200, { accessToken: 'missing-expiry' })
+        : respuesta(401, { error: { code: 'TOKEN_INVALID_OR_EXPIRED', message: 'expired' } }),
+    )
+    const invalida = await fallo(solicitar('GET', '/private'))
+    expect(invalida.code).toBe('INVALID_REFRESH_RESPONSE')
+    expect(invalida.status).toBe(502)
+  })
+
+  it('preserva abortos y utiliza mensajes de respaldo para errores desconocidos', async () => {
+    const aborto = new DOMException('cancelled', 'AbortError')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw aborto }))
+    await expect(solicitar('GET', '/private', { auth: 'ninguno' })).rejects.toBe(aborto)
+
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 500 })))
+    const servidor = await fallo(solicitar('GET', '/private', { auth: 'ninguno' }))
+    expect(servidor.paraUsuario).toBe('Algo falló de nuestro lado. Intenta de nuevo.')
+    expect(textoError(new Error('raw'), 'Mensaje alternativo')).toBe('Mensaje alternativo')
   })
 })
 

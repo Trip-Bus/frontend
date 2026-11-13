@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EstadosAsientos, MapaAsientos, Novedad } from '@/lib/tipos'
 import { aplicarEvento, construirPisos, libreMasCercano } from './mapaAsientos'
-import { calcularAvance, distanciaKm, minutosDeRetraso, puntoEnRuta } from './seguimiento'
+import { calcularAvance, crearProyeccion, distanciaKm, haceCuanto, minutosDeRetraso, puntoEnRuta, rumbo, segundosDesde } from './seguimiento'
 
 const mapa: MapaAsientos = {
   itineraryId: 'it',
@@ -91,10 +91,45 @@ describe('seguimiento', () => {
     expect(total).toBeGreaterThan(200)
   })
 
+  it('cubre los límites y tramos degenerados de la ruta', () => {
+    expect(calcularAvance(paradas.slice(0, 1), { lat: 4.65, lng: -74.1 })).toBeNull()
+    expect(calcularAvance(paradas, { lat: 4, lng: -74 })).toMatchObject({ ultimaParada: 0, fraccion: 0 })
+    expect(calcularAvance(paradas, paradas[2])).toMatchObject({ ultimaParada: 2, fraccion: 1 })
+
+    const repetidas = [paradas[0], paradas[0]]
+    expect(calcularAvance(repetidas, paradas[0])).toMatchObject({ ultimaParada: 0, kmRestantes: 0, fraccion: 0 })
+    expect(puntoEnRuta(repetidas, 0.5)).toMatchObject({ lat: 4.65, lng: -74.1 })
+    expect(puntoEnRuta(paradas, -1)).toMatchObject({ lat: 4.65, lng: -74.1 })
+    expect(puntoEnRuta(paradas, 2).lat).toBeCloseTo(6.25)
+  })
+
   it('el simulador recorre la ruta', () => {
     expect(puntoEnRuta(paradas, 0)).toMatchObject({ lat: 4.65, lng: -74.1 })
     const fin = puntoEnRuta(paradas, 1)
     expect(fin.lat).toBeCloseTo(6.25)
+  })
+
+  it('proyecta coordenadas y formatea tiempos de señal', () => {
+    const proyectar = crearProyeccion(
+      [{ lat: 4, lng: -74 }, { lat: 4, lng: -74 }],
+      320,
+      240,
+    )
+    expect(proyectar({ lat: 4, lng: -74 })).toMatchObject({ x: expect.any(Number), y: expect.any(Number) })
+    expect(segundosDesde(null, Date.now())).toBeNull()
+    expect(segundosDesde({
+      busId: 'bus',
+      itineraryId: 'trip',
+      lat: 4,
+      lng: -74,
+      velocidad: null,
+      rumbo: null,
+      timestamp: new Date(10_000).toISOString(),
+    }, 9_000)).toBe(0)
+    expect(haceCuanto(59)).toBe('59 s')
+    expect(haceCuanto(60)).toBe('1 min')
+    expect(haceCuanto(3600)).toBe('1 h 00')
+    expect(rumbo(paradas[0], paradas[1])).toBeGreaterThanOrEqual(0)
   })
 
   it('toma el último retraso reportado', () => {
@@ -109,5 +144,7 @@ describe('seguimiento', () => {
     })
     expect(minutosDeRetraso([n('RETRASO', '2026-10-12T10:00:00Z', 25), n('RETRASO', '2026-10-12T11:00:00Z', 10), n('INICIO', '2026-10-12T09:00:00Z')])).toBe(10)
     expect(minutosDeRetraso([])).toBe(0)
+    expect(minutosDeRetraso([n('RETRASO', '2026-10-12T10:00:00Z', -3)])).toBe(0)
+    expect(minutosDeRetraso([n('RETRASO', '2026-10-12T10:00:00Z')])).toBe(0)
   })
 })

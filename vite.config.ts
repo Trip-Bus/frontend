@@ -33,7 +33,14 @@ export default defineConfig(({ mode }) => {
     preview: { host: true, port: 4173 },
     test: {
       environment: 'node',
-      include: ['src/**/*.test.ts'],
+      include: ['src/**/*.test.{ts,tsx}'],
+      coverage: {
+        provider: 'v8',
+        reporter: ['text', 'lcov'],
+        include: ['src/**/*.{ts,tsx}'],
+        exclude: ['src/**/*.test.*', 'src/main.tsx', 'src/**/*.d.ts'],
+        thresholds: { lines: 40, statements: 40, functions: 40, branches: 40 },
+      },
     },
   }
 })

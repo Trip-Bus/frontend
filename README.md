@@ -30,6 +30,7 @@ Usuario de prueba (con `DEMO_USERS_ENABLED=true` en el backend): `pasajero@tripb
 | `npm run build` | Revisa tipos y genera `dist/` |
 | `npm run lint` | Lint con oxlint |
 | `npm test` | Pruebas (Vitest) |
+| `npm run test:coverage` | Pruebas con cobertura y umbral mínimo del 40% |
 | `npm run preview` | Sirve el build para revisarlo |
 
 ### ¿Cómo llega la app al backend?

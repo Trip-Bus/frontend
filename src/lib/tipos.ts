@@ -353,6 +353,20 @@ export type PosicionRequest = {
   timestamp?: FechaIso
 }
 
+export type UbicacionConductorRequest = {
+  lat: number
+  lng: number
+  precision: number
+  velocidad: number | null
+  rumbo: number | null
+  timestamp: FechaIso
+}
+
+export type RespuestaUbicacionConductor = {
+  aceptada: boolean
+  motivo?: string
+}
+
 export type Novedad = {
   tripEventId: Uuid
   itineraryId: Uuid

@@ -76,7 +76,8 @@ src/
     cuenta.ts              Reglas de la cuenta: contraseña, celular, código TOTP, archivo de mis datos (con pruebas)
     descarga.ts            Descargar JSON o texto desde el navegador
     seguimiento.ts         Proyección del mapa, avance sobre la ruta, retraso, simulador
-    gps.ts                 Envío de GPS del conductor (real o simulado)
+    gps.ts                 Rastreo del conductor, Wake Lock y envío GPS real/simulado
+    gpsCola.ts             Cola en memoria (máx. 50) para posiciones sin conexión
     ciudadVisual.ts        "Ciudad de fondo": foto, acento y encuadre de cada destino
   hooks/useAcento.ts       Pone el acento del destino en la variable CSS --acento
   assets/ciudades/         Fotos de los destinos (Vite las empaqueta con hash)
@@ -109,6 +110,8 @@ src/
 | `/panel/validar` | Validar el pase al abordar (cámara con BarcodeDetector o texto del QR) | US-033 |
 
 Las rutas de compra y de la cuenta exigen sesión; el panel exige rol CONDUCTOR, OPERADOR o ADMIN (US-005).
+El rastreo del conductor inicia y detiene sesión en `/driver/tracking/*`, envía posiciones a
+`/driver/location` cada 8 segundos y reintenta en lote las lecturas en cola cuando vuelve la conexión.
 
 **Verificación en dos pasos obligatoria** (`MFA_REQUIRED_ROLES` en identity): si el rol la exige y aún no está
 activa, la API responde `403 MFA_SETUP_REQUIRED`; `lib/api.ts` emite el evento `tripbus:mfa-obligatoria` y

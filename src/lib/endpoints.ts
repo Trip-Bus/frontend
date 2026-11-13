@@ -31,8 +31,10 @@ import type {
   Seguimiento,
   Tiquete,
   Usuario,
+  UbicacionConductorRequest,
   Uuid,
   ValidacionTiquete,
+  RespuestaUbicacionConductor,
 } from './tipos'
 
 /**
@@ -142,6 +144,16 @@ export const api = {
     /** US-038: ingesta GPS (202, asíncrona). */
     enviarPosicion: (posicion: PosicionRequest) =>
       solicitar<void>('POST', '/telemetry/position', { auth: 'requerido', body: posicion }),
+  },
+
+  /* ------------------------------------------------ Driver tracking */
+  conductor: {
+    iniciarRastreo: () => solicitar<void>('POST', '/driver/tracking/start', { auth: 'requerido' }),
+    detenerRastreo: () => solicitar<void>('POST', '/driver/tracking/stop', { auth: 'requerido' }),
+    enviarUbicacion: (ubicacion: UbicacionConductorRequest) =>
+      solicitar<RespuestaUbicacionConductor | null>('POST', '/driver/location', { auth: 'requerido', body: ubicacion }),
+    enviarUbicaciones: (ubicaciones: UbicacionConductorRequest[]) =>
+      solicitar<void>('POST', '/driver/location/batch', { auth: 'requerido', body: { positions: ubicaciones } }),
   },
 
   /* ------------------------------------------------ Administración */

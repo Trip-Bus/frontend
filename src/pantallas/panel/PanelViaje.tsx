@@ -208,7 +208,7 @@ function ReportarNovedad({ d }: { d: DetalleItinerario }) {
 /* ------------------------------------------------------------------ GPS (US-038) */
 function EnviarGps({ d }: { d: DetalleItinerario }) {
   const ahora = useAhora()
-  const { modo, setModo, ultimo, error } = useEnvioGps(d)
+  const { modo, setModo, ultimo, error, pendientes } = useEnvioGps(d)
   const opciones: { modo: ModoGps; texto: string; icono: typeof Radio }[] = [
     { modo: 'real', texto: 'GPS del teléfono', icono: Navigation },
     { modo: 'simulado', texto: 'Simular recorrido', icono: Radio },
@@ -243,6 +243,11 @@ function EnviarGps({ d }: { d: DetalleItinerario }) {
         })}
       </div>
       {error && <Aviso tono="alerta">{error}</Aviso>}
+      {pendientes > 0 && (
+        <Aviso tono="alerta">
+          {plural(pendientes, 'posición pendiente', 'posiciones pendientes')} por enviar.
+        </Aviso>
+      )}
       {ultimo && (
         <span role="status" className="text-[13px] text-texto-2">
           Última posición enviada hace {haceCuanto(Math.round((ahora - ultimo.en) / 1000))} ·{' '}

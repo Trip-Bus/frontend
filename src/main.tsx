@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from 'react-router'
 import { Toaster } from 'sonner'
+import { AlertasGlobales } from './components/marca/AlertasGlobales'
 
 // Tipografías autoalojadas (sin depender de Google en tiempo de ejecución; sirven sin señal).
 import '@fontsource-variable/geist'
@@ -37,6 +38,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
+      <AlertasGlobales />
       <Toaster
         position="top-center"
         toastOptions={{

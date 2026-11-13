@@ -24,6 +24,13 @@ export type AuthResponse = {
   refreshExpiresAt?: FechaIso | null
 }
 
+export type RenovacionTokensResponse = {
+  accessToken: string
+  expiresAt: FechaIso
+  refreshToken?: string | null
+  refreshExpiresAt?: FechaIso | null
+}
+
 /** US-106: la cuenta tiene verificación en dos pasos: el login no trae tokens, solo el desafío (5 min, un uso). */
 export type MfaRequerido = { mfaRequired: true; mfaToken: string }
 

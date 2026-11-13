@@ -1,6 +1,6 @@
 import { createBrowserRouter } from 'react-router'
 import { ErrorRuta } from './pantallas/ErrorRuta'
-import { RequiereEquipo, RequiereSesion, Raiz } from './pantallas/guardias'
+import { RequiereEquipo, RequiereRol, RequiereSesion, Raiz, SoloPasajero } from './pantallas/guardias'
 import { NoEncontrada } from './pantallas/NoEncontrada'
 
 /**
@@ -18,8 +18,13 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <Raiz /> },
       { path: '/entrar', lazy: () => import('./pantallas/Entrar').then((m) => ({ Component: m.Entrar })) },
-      { path: '/inicio', lazy: () => import('./pantallas/Inicio').then((m) => ({ Component: m.Inicio })) },
-      { path: '/salidas', lazy: () => import('./pantallas/Salidas').then((m) => ({ Component: m.Salidas })) },
+      {
+        element: <SoloPasajero />,
+        children: [
+          { path: '/inicio', lazy: () => import('./pantallas/Inicio').then((m) => ({ Component: m.Inicio })) },
+          { path: '/salidas', lazy: () => import('./pantallas/Salidas').then((m) => ({ Component: m.Salidas })) },
+        ],
+      },
       // Públicas: el mapa en vivo de puestos, el drop y el bus en vivo se ven sin cuenta.
       { path: '/viaje/:itineraryId/asientos', lazy: () => import('./pantallas/Asientos').then((m) => ({ Component: m.Asientos })) },
       { path: '/viaje/:itineraryId/en-vivo', lazy: () => import('./pantallas/EnVivo').then((m) => ({ Component: m.EnVivo })) },
@@ -31,14 +36,19 @@ export const router = createBrowserRouter([
       {
         element: <RequiereSesion />,
         children: [
-          { path: '/reserva/:holdId', lazy: () => import('./pantallas/Reserva').then((m) => ({ Component: m.Reserva })) },
-          { path: '/pago/:bookingId', lazy: () => import('./pantallas/Pago').then((m) => ({ Component: m.Pago })) },
-          { path: '/pase/:ticketId', lazy: () => import('./pantallas/Pase').then((m) => ({ Component: m.Pase })) },
-          { path: '/mis-tiquetes', lazy: () => import('./pantallas/MisTiquetes').then((m) => ({ Component: m.MisTiquetes })) },
-          { path: '/cuenta', lazy: () => import('./pantallas/Cuenta').then((m) => ({ Component: m.Cuenta })) },
-          // Tus datos (US-128, US-131) y seguridad (US-129, US-106).
-          { path: '/cuenta/datos', lazy: () => import('./pantallas/CuentaDatos').then((m) => ({ Component: m.CuentaDatos })) },
-          { path: '/cuenta/seguridad', lazy: () => import('./pantallas/Seguridad').then((m) => ({ Component: m.Seguridad })) },
+          {
+            element: <RequiereRol roles={['PASAJERO']} />,
+            children: [
+              { path: '/reserva/:holdId', lazy: () => import('./pantallas/Reserva').then((m) => ({ Component: m.Reserva })) },
+              { path: '/pago/:bookingId', lazy: () => import('./pantallas/Pago').then((m) => ({ Component: m.Pago })) },
+              { path: '/pase/:ticketId', lazy: () => import('./pantallas/Pase').then((m) => ({ Component: m.Pase })) },
+              { path: '/mis-tiquetes', lazy: () => import('./pantallas/MisTiquetes').then((m) => ({ Component: m.MisTiquetes })) },
+              { path: '/cuenta', lazy: () => import('./pantallas/Cuenta').then((m) => ({ Component: m.Cuenta })) },
+              // Tus datos (US-128, US-131) y seguridad (US-129, US-106).
+              { path: '/cuenta/datos', lazy: () => import('./pantallas/CuentaDatos').then((m) => ({ Component: m.CuentaDatos })) },
+              { path: '/cuenta/seguridad', lazy: () => import('./pantallas/Seguridad').then((m) => ({ Component: m.Seguridad })) },
+            ],
+          },
         ],
       },
       {

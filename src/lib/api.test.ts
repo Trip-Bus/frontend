@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, EVENTO_MFA_OBLIGATORIA, construirQuery, solicitar } from './api'
+import { sesion } from './sesion'
 import { esperaReconexion } from './tiempoReal'
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  sesion.cerrar()
+})
 
 /** Espera que la promesa falle y devuelve el ApiError. */
 const fallo = (p: Promise<unknown>): Promise<ApiError> =>
@@ -61,7 +65,7 @@ describe('cliente de la API', () => {
     await solicitar('POST', '/bookings/b1/pay', { auth: 'ninguno', body: { cardToken: 't' }, idempotencyKey: 'k-1' })
     const [url, init] = f.mock.calls[0]
     const headers = (init ?? {}).headers as Record<string, string>
-    expect(url).toBe('/api/bookings/b1/pay')
+    expect(url).toBe('/api/v1/bookings/b1/pay')
     expect(headers['Idempotency-Key']).toBe('k-1')
   })
 
@@ -73,6 +77,39 @@ describe('cliente de la API', () => {
   it('204 devuelve undefined', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => respuesta(204)))
     await expect(solicitar('POST', '/auth/logout', { auth: 'ninguno' })).resolves.toBeUndefined()
+  })
+  it('renueva una sola vez cuando varias peticiones reciben 401 y rota los tokens', async () => {
+    sesion.iniciar({
+      accessToken: 'access-old',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      refreshToken: 'refresh-old',
+      refreshExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      userId: 'user-1',
+      rol: 'PASAJERO',
+    })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/v1/auth/refresh') {
+        return respuesta(200, {
+          accessToken: 'access-new',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          refreshToken: 'refresh-new',
+          refreshExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+        })
+      }
+      const auth = (init?.headers as Record<string, string> | undefined)?.Authorization
+      return auth === 'Bearer access-old'
+        ? respuesta(401, { error: { code: 'TOKEN_INVALID_OR_EXPIRED', message: 'expired' } })
+        : respuesta(200, { ok: true })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      Promise.all([solicitar('GET', '/one', { auth: 'requerido' }), solicitar('GET', '/two', { auth: 'requerido' })]),
+    ).resolves.toEqual([{ ok: true }, { ok: true }])
+
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/v1/auth/refresh')).toHaveLength(1)
+    expect(sesion.token()).toBe('access-new')
+    expect(sesion.refreshToken()).toBe('refresh-new')
   })
   it('avisa a la app cuando el rol exige activar la verificación en dos pasos (US-106)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
@@ -91,9 +128,9 @@ describe('cliente de la API', () => {
 
 describe('reconexión del tiempo real', () => {
   it('backoff exponencial con tope de 30 s', () => {
-    expect(esperaReconexion(0, () => 1)).toBe(1000)
-    expect(esperaReconexion(3, () => 1)).toBe(8000)
-    expect(esperaReconexion(10, () => 1)).toBe(30000)
-    expect(esperaReconexion(10, () => 0)).toBe(500)
+    expect(esperaReconexion(0)).toBe(1000)
+    expect(esperaReconexion(1)).toBe(2000)
+    expect(esperaReconexion(2)).toBe(4000)
+    expect(esperaReconexion(10)).toBe(30000)
   })
 })

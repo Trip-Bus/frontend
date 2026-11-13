@@ -1,4 +1,5 @@
 import { solicitar } from './api'
+import { sesion } from './sesion'
 import type {
   AuthResponse,
   CambiarPasswordRequest,
@@ -47,7 +48,7 @@ export const api = {
       solicitar<AuthResponse>('POST', '/auth/2fa', { auth: 'ninguno', body: datos }),
     registro: (datos: RegistroRequest) =>
       solicitar<AuthResponse>('POST', '/auth/register', { auth: 'ninguno', body: datos }),
-    logout: () => solicitar<void>('POST', '/auth/logout', { auth: 'requerido' }),
+    logout: () => solicitar<void>('POST', '/auth/logout', { auth: 'requerido', body: { refreshToken: sesion.refreshToken() } }),
     usuario: (id: Uuid) => solicitar<Usuario>('GET', `/users/${id}`, { auth: 'requerido' }),
     /** US-125: siempre 202 (exista o no el correo). */
     pedirRecuperacion: (email: string) =>

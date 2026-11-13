@@ -23,8 +23,8 @@ import { sesion } from './sesion'
 export type EstadoConexion = 'sin-sesion' | 'conectando' | 'en-vivo' | 'reconectando'
 
 export type MensajeTopico =
-  | { type: 'snapshot'; topic: string; data: unknown; error?: string }
-  | { type: 'event'; topic: string; event: string; eventId: string; occurredAt: string; data: unknown }
+  | { type: 'snapshot'; topic: string; data: unknown; error?: string; seq?: number | string }
+  | { type: 'event'; topic: string; event: string; eventId: string; occurredAt: string; data: unknown; seq?: number | string }
 
 type MensajeServidor =
   | MensajeTopico
@@ -49,11 +49,12 @@ function urlBase(): string {
   return `${proto}://${globalThis.location?.host}/ws`
 }
 
-/** Espera antes del intento n (0, 1, 2…): base 1 s, tope 30 s, "full jitter". */
-export function esperaReconexion(intento: number, aleatorio: () => number = Math.random): number {
-  const tope = Math.min(30_000, 1_000 * 2 ** intento)
-  return Math.round(500 + aleatorio() * (tope - 500))
+/** Espera antes del intento n (0, 1, 2…): 1, 2, 4… segundos, con tope de 30 s. */
+export function esperaReconexion(intento: number): number {
+  return Math.min(30_000, 1_000 * 2 ** intento)
 }
+
+export const EVENTO_WS_DUPLICADO = 'tripbus:websocket-duplicado'
 
 class ConexionTiempoReal {
   private ws: WebSocket | null = null
@@ -65,6 +66,9 @@ class ConexionTiempoReal {
   private vigia: ReturnType<typeof setTimeout> | null = null
   private tokenUsado: string | null = null
   private autenticado = false
+  private debeReanudar = false
+  private detenidoPorLimite = false
+  private ultimoSeq = new Map<string, string>()
   /** El servidor (rama main) no acepta sesiones anónimas: sin token no se intenta de nuevo. */
   private anonimoRechazado = false
 
@@ -98,6 +102,7 @@ class ConexionTiempoReal {
       actual.delete(manejador)
       if (actual.size === 0) {
         this.manejadores.delete(topico)
+        this.ultimoSeq.delete(topico)
         if (this.autenticado) this.enviar({ type: 'unsubscribe', topic: topico })
         if (this.manejadores.size === 0) this.cerrar('sin-sesion')
       }
@@ -111,7 +116,7 @@ class ConexionTiempoReal {
   }
 
   private asegurarConexion() {
-    if (this.ws || this.temporizador || this.manejadores.size === 0) return
+    if (this.ws || this.temporizador || this.manejadores.size === 0 || this.detenidoPorLimite) return
     const token = sesion.token()
     if (!token && this.anonimoRechazado) {
       this.cambiarEstado('sin-sesion')
@@ -149,11 +154,19 @@ class ConexionTiempoReal {
         case 'connected':
           this.intento = 0
           this.autenticado = true
-          this.manejadores.forEach((_, topico) => this.enviar({ type: 'subscribe', topic: topico }))
+          this.manejadores.forEach((_, topico) => {
+            if (this.debeReanudar) {
+              this.enviar({ type: 'resume', topic: topico, lastSeq: this.ultimoSeq.get(topico) ?? '0' })
+            } else {
+              this.enviar({ type: 'subscribe', topic: topico })
+            }
+          })
+          this.debeReanudar = false
           this.cambiarEstado('en-vivo')
           return
         case 'snapshot':
         case 'event':
+          if (msg.seq !== undefined) this.ultimoSeq.set(msg.topic, String(msg.seq))
           this.manejadores.get(msg.topic)?.forEach((h) => h(msg))
           return
         case 'error':
@@ -163,17 +176,37 @@ class ConexionTiempoReal {
             this.cerrar('sin-sesion')
             return
           }
+          if (msg.code === 'TOO_MANY_CONNECTIONS') {
+            this.detenidoPorLimite = true
+            this.debeReanudar = false
+            this.ws?.close(4429, 'TOO_MANY_CONNECTIONS')
+            globalThis.dispatchEvent?.(new Event(EVENTO_WS_DUPLICADO))
+            return
+          }
           if (import.meta.env.DEV) console.warn('[tiempo real]', msg.code, msg.message)
           return
         default:
           return
       }
     }
-    ws.onclose = () => {
+    ws.onclose = (evento) => {
       if (this.ws !== ws) return
       this.ws = null
+      this.debeReanudar = this.autenticado
       this.autenticado = false
       this.limpiarVigia()
+      if (evento.code === 4429) {
+        const yaDetenido = this.detenidoPorLimite
+        this.detenidoPorLimite = true
+        this.debeReanudar = false
+        this.cambiarEstado('sin-sesion')
+        if (!yaDetenido) globalThis.dispatchEvent?.(new Event(EVENTO_WS_DUPLICADO))
+        return
+      }
+      if (this.detenidoPorLimite) {
+        this.cambiarEstado('sin-sesion')
+        return
+      }
       if (this.manejadores.size > 0 && (sesion.token() || !this.anonimoRechazado)) this.programarReconexion()
       else this.cambiarEstado('sin-sesion')
     }
@@ -217,6 +250,7 @@ class ConexionTiempoReal {
   }
 
   private reiniciar() {
+    this.detenidoPorLimite = false
     if (sesion.token()) this.anonimoRechazado = false
     this.cerrar('sin-sesion')
     this.asegurarConexion()

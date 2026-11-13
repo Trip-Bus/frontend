@@ -15,6 +15,8 @@ import type { AuthResponse, Rol, Uuid } from './tipos'
 export type Sesion = {
   token: string
   expiraEn: number // epoch ms
+  refreshToken: string | null
+  refreshExpiraEn: number | null
   userId: Uuid
   rol: Rol
 }
@@ -27,8 +29,18 @@ function leer(): Sesion | null {
   try {
     const crudo = globalThis.localStorage?.getItem(CLAVE)
     if (!crudo) return null
-    const s = JSON.parse(crudo) as Sesion
-    return s.expiraEn > Date.now() ? s : null
+    const s = JSON.parse(crudo) as Partial<Sesion>
+    if (typeof s.token !== 'string' || typeof s.expiraEn !== 'number' || typeof s.userId !== 'string' || !s.rol) return null
+    return s.expiraEn > Date.now()
+      ? {
+          token: s.token,
+          expiraEn: s.expiraEn,
+          refreshToken: typeof s.refreshToken === 'string' ? s.refreshToken : null,
+          refreshExpiraEn: typeof s.refreshExpiraEn === 'number' ? s.refreshExpiraEn : null,
+          userId: s.userId,
+          rol: s.rol,
+        }
+      : null
   } catch {
     return null
   }
@@ -40,7 +52,11 @@ function emitir() {
 
 export const sesion = {
   obtener(): Sesion | null {
-    if (actual && actual.expiraEn <= Date.now()) {
+    if (
+      actual &&
+      actual.expiraEn <= Date.now() &&
+      (!actual.refreshToken || (actual.refreshExpiraEn !== null && actual.refreshExpiraEn <= Date.now()))
+    ) {
       sesion.cerrar()
     }
     return actual
@@ -50,10 +66,39 @@ export const sesion = {
     return sesion.obtener()?.token ?? null
   },
 
+  refreshToken(): string | null {
+    return sesion.obtener()?.refreshToken ?? null
+  },
+
+  actualizarTokens(tokens: { accessToken: string; expiresAt: string; refreshToken?: string | null; refreshExpiresAt?: string | null }) {
+    const existente = sesion.obtener()
+    if (!existente) return
+    actual = {
+      ...existente,
+      token: tokens.accessToken,
+      expiraEn: new Date(tokens.expiresAt).getTime(),
+      refreshToken: tokens.refreshToken === undefined ? existente.refreshToken : tokens.refreshToken,
+      refreshExpiraEn:
+        tokens.refreshExpiresAt === undefined
+          ? existente.refreshExpiraEn
+          : tokens.refreshExpiresAt === null
+            ? null
+            : new Date(tokens.refreshExpiresAt).getTime(),
+    }
+    try {
+      globalThis.localStorage?.setItem(CLAVE, JSON.stringify(actual))
+    } catch {
+      /* sin almacenamiento: la sesión vive solo en memoria */
+    }
+    emitir()
+  },
+
   iniciar(auth: AuthResponse) {
     actual = {
       token: auth.accessToken,
       expiraEn: new Date(auth.expiresAt).getTime(),
+      refreshToken: auth.refreshToken ?? null,
+      refreshExpiraEn: auth.refreshExpiresAt ? new Date(auth.refreshExpiresAt).getTime() : null,
       userId: auth.userId,
       rol: auth.rol,
     }

@@ -1,15 +1,21 @@
 import { sesion } from './sesion'
-import type { ErrorApi } from './tipos'
+import type { ErrorApi, RenovacionTokensResponse } from './tipos'
 
 /**
  * Cliente HTTP contra el API Gateway.
  *
- * El navegador siempre llama a `/api/...` en su mismo origen:
+ * El navegador siempre llama a `/api/v1/...` en su mismo origen:
  *  - en desarrollo, Vite hace de proxy al gateway (vite.config.ts);
  *  - en producción, el NGINX del contenedor del frontend (nginx/default.conf.template).
  * Así no hay CORS. Para apuntar a otro lugar, define VITE_API_URL.
  */
-export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
+export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api/v1'
+
+export const EVENTO_SESION_EXPIRADA = 'tripbus:sesion-expirada'
+export const EVENTO_CUENTA_SUSPENDIDA = 'tripbus:cuenta-suspendida'
+export const EVENTO_CUENTA_BLOQUEADA = 'tripbus:cuenta-bloqueada'
+
+let renovacionEnCurso: Promise<boolean> | null = null
 
 export class ApiError extends Error {
   readonly status: number
@@ -44,6 +50,10 @@ type Opciones = {
 }
 
 export async function solicitar<T>(metodo: string, ruta: string, opciones: Opciones = {}): Promise<T> {
+  return ejecutar<T>(metodo, ruta, opciones, true)
+}
+
+async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, permitirRenovacion: boolean): Promise<T> {
   const { auth = 'opcional', body, query, idempotencyKey, signal } = opciones
   const headers: Record<string, string> = { Accept: 'application/json' }
 
@@ -83,8 +93,24 @@ export async function solicitar<T>(metodo: string, ruta: string, opciones: Opcio
       err?.details ?? {},
       Number.isFinite(retry) && retry > 0 ? retry : null,
     )
-    // Token vencido o revocado: se cierra la sesión local para pedir login de nuevo.
-    if (respuesta.status === 401 && token) sesion.cerrar()
+    if (respuesta.status === 401 && token) {
+      const tokenActual = sesion.token()
+      if (permitirRenovacion && tokenActual && tokenActual !== token) {
+        return ejecutar<T>(metodo, ruta, opciones, false)
+      }
+      if (permitirRenovacion && sesion.refreshToken()) {
+        if (await renovarSesion()) return ejecutar<T>(metodo, ruta, opciones, false)
+        throw apiError
+      }
+      if (permitirRenovacion) cerrarSesionExpirada()
+    }
+    if (respuesta.status === 403 && apiError.code === 'ACCOUNT_SUSPENDED') {
+      sesion.cerrar()
+      emitir(EVENTO_CUENTA_SUSPENDIDA)
+    }
+    if (respuesta.status === 423 && apiError.code === 'ACCOUNT_LOCKED') {
+      emitir(EVENTO_CUENTA_BLOQUEADA, { reintentarEn: apiError.reintentarEn })
+    }
     // US-106: el rol exige la verificación en dos pasos y aún no está activa: la app lleva a activarla.
     if (respuesta.status === 403 && apiError.code === 'MFA_SETUP_REQUIRED') avisarMfaObligatoria()
     throw apiError
@@ -93,11 +119,84 @@ export async function solicitar<T>(metodo: string, ruta: string, opciones: Opcio
   return datos as T
 }
 
+function emitir<T>(tipo: string, detalle?: T) {
+  const evento = detalle === undefined ? new Event(tipo) : new CustomEvent(tipo, { detail: detalle })
+  globalThis.dispatchEvent?.(evento)
+}
+
+function cerrarSesionExpirada() {
+  sesion.cerrar()
+  emitir(EVENTO_SESION_EXPIRADA)
+}
+
+function renovarSesion(): Promise<boolean> {
+  if (renovacionEnCurso) return renovacionEnCurso
+  const refreshToken = sesion.refreshToken()
+  if (!refreshToken) return Promise.resolve(false)
+
+  renovacionEnCurso = (async () => {
+    let respuesta: Response
+    try {
+      respuesta = await fetch(API_BASE + '/auth/refresh', {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e
+      throw new ApiError(0, 'SIN_CONEXION', 'No hay conexión. Revisa tu señal e intenta de nuevo.')
+    }
+
+    const texto = await respuesta.text()
+    const datos = texto ? intentarJson(texto) : null
+    if (!respuesta.ok) {
+      const err = (datos as ErrorApi | null)?.error
+      const retry = Number(respuesta.headers.get('Retry-After'))
+      const error = new ApiError(
+        respuesta.status,
+        err?.code ?? `HTTP_${respuesta.status}`,
+        err?.message ?? 'No pudimos renovar tu sesión.',
+        err?.details ?? {},
+        Number.isFinite(retry) && retry > 0 ? retry : null,
+      )
+      if (respuesta.status === 401 && ['REFRESH_TOKEN_REUSED', 'INVALID_REFRESH_TOKEN'].includes(error.code)) {
+        cerrarSesionExpirada()
+        return false
+      }
+      if (respuesta.status === 403 && error.code === 'ACCOUNT_SUSPENDED') {
+        sesion.cerrar()
+        emitir(EVENTO_CUENTA_SUSPENDIDA)
+        return false
+      }
+      if (respuesta.status === 423 && error.code === 'ACCOUNT_LOCKED') {
+        emitir(EVENTO_CUENTA_BLOQUEADA, { reintentarEn: error.reintentarEn })
+      }
+      throw error
+    }
+
+    const tokens = datos as RenovacionTokensResponse | null
+    if (
+      !tokens ||
+      typeof tokens.accessToken !== 'string' ||
+      typeof tokens.expiresAt !== 'string' ||
+      !Number.isFinite(new Date(tokens.expiresAt).getTime())
+    ) {
+      throw new ApiError(502, 'INVALID_REFRESH_RESPONSE', 'El servidor no devolvió una sesión válida.')
+    }
+    sesion.actualizarTokens(tokens)
+    return true
+  })().finally(() => {
+    renovacionEnCurso = null
+  })
+
+  return renovacionEnCurso
+}
+
 /** Evento global: la app (main.tsx) lleva a /cuenta/seguridad cuando la 2FA es obligatoria. */
 export const EVENTO_MFA_OBLIGATORIA = 'tripbus:mfa-obligatoria'
 
 function avisarMfaObligatoria() {
-  globalThis.dispatchEvent?.(new Event(EVENTO_MFA_OBLIGATORIA))
+  emitir(EVENTO_MFA_OBLIGATORIA)
 }
 
 export function construirQuery(query?: Opciones['query']): string {

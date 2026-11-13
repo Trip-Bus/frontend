@@ -38,14 +38,12 @@ El navegador **solo habla con su propio origen**, así no hay problemas de CORS:
 
 | La app llama a | En desarrollo (Vite) | En producción (NGINX de este repo) |
 |---|---|---|
-| `/api/trips/search` | → `http://localhost:8080/trips/search` | → `http://api-gateway:8080/trips/search` |
-| `/ws` (WebSocket) | → `ws://localhost:16007/ws` | → `${REALTIME_URL}/ws` |
+| `/api/v1/trips/search` | → `http://localhost:18000/trips/search` | → `http://api-gateway:8080/trips/search` |
+| `/ws` (WebSocket) | → `ws://localhost:18000/ws` | → `${REALTIME_URL}/ws` |
 
-En la rama `develop` del backend el API Gateway ya enruta `/ws` (puerto 18000) y el 18007 no se publica
-en PROD: ahí basta con `REALTIME_URL` igual a `API_GATEWAY_URL` (en desarrollo,
-`DEV_WS_TARGET=ws://localhost:18000`).
-
-Para cambiar destinos en desarrollo copia `.env.example` como `.env.local`.
+El cliente usa `/api/v1` como prefijo y Vite/NGINX lo eliminan antes de reenviar las peticiones al
+gateway. En desarrollo ambos proxies usan por defecto el gateway local en `:18000`; para cambiarlo,
+copia `.env.example` como `.env.local`.
 
 ---
 

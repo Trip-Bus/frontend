@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Navigation, Radio, Send, Zap } from 'lucide-react'
+import { Navigation, QrCode, Radio, Send, Zap } from 'lucide-react'
 import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -24,6 +24,8 @@ import { useSesion } from '@/lib/sesion'
 import { topicos, useTopico } from '@/lib/tiempoReal'
 import type { DetalleItinerario, EstadoOferta, Novedad, Oferta, TipoNovedad } from '@/lib/tipos'
 import { cn } from '@/lib/utils'
+import { DescargarManifiesto } from './DescargarManifiesto'
+import { OperacionesConductor } from './OperacionesConductor'
 
 const TIPOS: { tipo: TipoNovedad; texto: string }[] = [
   { tipo: 'INICIO', texto: 'Salimos' },
@@ -49,7 +51,7 @@ export function PanelViaje() {
   const s = useSesion()!
   const detalle = useQuery({ queryKey: ['itinerario', itineraryId], queryFn: () => api.catalogo.itinerario(itineraryId) })
   useAcento(detalle.data?.destino)
-  const puedeOfertar = s.rol === 'OPERADOR' || s.rol === 'ADMIN'
+  const puedeDescargarManifiesto = s.rol === 'OPERADOR' || s.rol === 'ADMIN' || s.rol === 'CONDUCTOR'
 
   if (detalle.isError) return <PantallaError titulo="No pudimos abrir el viaje" error={detalle.error} reintentar={() => detalle.refetch()} volverA="/panel" />
   const d = detalle.data
@@ -85,9 +87,17 @@ export function PanelViaje() {
       )}
 
       <div className="flex flex-col gap-3.5 px-5 pt-4 pb-6">
+        {puedeDescargarManifiesto && <DescargarManifiesto itineraryId={d.itineraryId} />}
+        {s.rol === 'CONDUCTOR' && <OperacionesConductor itineraryId={d.itineraryId} />}
+        {(s.rol === 'CONDUCTOR' || s.rol === 'OPERADOR' || s.rol === 'ADMIN') && (
+          <Link to="/panel/validar" className={buttonVariants({ variante: 'contorno', ancho: 'completo' })}>
+            <QrCode className="size-5" aria-hidden="true" />
+            Validar pase de abordaje
+          </Link>
+        )}
         <ReportarNovedad d={d} />
         <EnviarGps d={d} />
-        {puedeOfertar && <Drops d={d} />}
+        {(s.rol === 'OPERADOR' || s.rol === 'ADMIN') && <Drops d={d} />}
       </div>
     </Pantalla>
   )

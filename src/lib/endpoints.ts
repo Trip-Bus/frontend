@@ -1,8 +1,10 @@
-import { solicitar } from './api'
+import { solicitar, solicitarBlob } from './api'
 import { sesion } from './sesion'
 import type {
   AuthResponse,
+  AlertaConductor,
   CambiarPasswordRequest,
+  ChecklistInicioViaje,
   CodigosRecuperacion,
   ConfiguracionMfa,
   CrearOfertaRequest,
@@ -21,8 +23,10 @@ import type {
   Perfil,
   PerfilRequest,
   PosicionRequest,
+  ProgresoViaje,
   RegistroRequest,
   RespuestaLogin,
+  RespuestaLoteUbicaciones,
   Reserva,
   ReservaOferta,
   ResultadoViaje,
@@ -35,6 +39,7 @@ import type {
   Uuid,
   ValidacionTiquete,
   RespuestaUbicacionConductor,
+  ViajeConductor,
 } from './tipos'
 
 /**
@@ -116,6 +121,8 @@ export const api = {
     pagar: (id: Uuid, pago: PagoRequest, idempotencyKey: string) =>
       solicitar<Pago>('POST', `/bookings/${id}/pay`, { auth: 'requerido', body: pago, idempotencyKey }),
     tiquete: (id: Uuid) => solicitar<Tiquete>('GET', `/tickets/${id}`, { auth: 'requerido' }),
+    manifiestoCsv: (itineraryId: Uuid) =>
+      solicitarBlob('GET', `/itineraries/${itineraryId}/manifest`, { auth: 'requerido', query: { format: 'csv' } }),
     /** Abordaje: conductor, operador o admin leen el QR del pasajero. */
     validarTiquete: (qrCode: string) =>
       solicitar<ValidacionTiquete>('POST', '/tickets/validate', { auth: 'requerido', body: { qrCode } }),
@@ -148,12 +155,24 @@ export const api = {
 
   /* ------------------------------------------------ Driver tracking */
   conductor: {
+    misViajes: (fecha?: string) =>
+      solicitar<ViajeConductor[]>('GET', '/driver/trips', { auth: 'requerido', query: { fecha } }),
+    viajeActivo: () => solicitar<ViajeConductor>('GET', '/driver/trips/active', { auth: 'requerido' }),
+    iniciarViaje: (itineraryId: Uuid, checklist: ChecklistInicioViaje, observacion?: string) =>
+      solicitar<ProgresoViaje>('POST', `/driver/trips/${itineraryId}/start`, {
+        auth: 'requerido',
+        body: { checklist, observacion },
+      }),
+    finalizarViaje: (itineraryId: Uuid) =>
+      solicitar<ProgresoViaje>('POST', `/driver/trips/${itineraryId}/finish`, { auth: 'requerido' }),
+    enviarSos: (mensaje?: string) =>
+      solicitar<AlertaConductor>('POST', '/driver/sos', { auth: 'requerido', body: { mensaje } }),
     iniciarRastreo: () => solicitar<void>('POST', '/driver/tracking/start', { auth: 'requerido' }),
     detenerRastreo: () => solicitar<void>('POST', '/driver/tracking/stop', { auth: 'requerido' }),
     enviarUbicacion: (ubicacion: UbicacionConductorRequest) =>
       solicitar<RespuestaUbicacionConductor | null>('POST', '/driver/location', { auth: 'requerido', body: ubicacion }),
     enviarUbicaciones: (ubicaciones: UbicacionConductorRequest[]) =>
-      solicitar<void>('POST', '/driver/location/batch', { auth: 'requerido', body: { positions: ubicaciones } }),
+      solicitar<RespuestaLoteUbicaciones>('POST', '/driver/location/batch', { auth: 'requerido', body: ubicaciones }),
   },
 
   /* ------------------------------------------------ Administración */

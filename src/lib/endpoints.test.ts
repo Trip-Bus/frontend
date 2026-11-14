@@ -53,6 +53,7 @@ describe('endpoints de la API TripBus', () => {
       api.reservas.obtener(id),
       api.reservas.pagar(id, { cardToken: 'tok' }, 'key'),
       api.reservas.tiquete(id),
+      api.reservas.manifiestoCsv(id),
       api.reservas.validarTiquete('qr'),
       api.ofertas.listar(id),
       api.ofertas.obtener(id),
@@ -65,6 +66,16 @@ describe('endpoints de la API TripBus', () => {
       api.viaje.novedades(id),
       api.viaje.reportar(id, { tipo: 'INICIO' }),
       api.viaje.enviarPosicion({ busId: id, itineraryId: id, lat: 4, lng: -74 }),
+      api.conductor.misViajes(),
+      api.conductor.viajeActivo(),
+      api.conductor.iniciarViaje(id, {
+        manifiestoRevisado: true,
+        documentosBus: true,
+        lucesYLlantas: true,
+        botiquinYExtintor: true,
+      }),
+      api.conductor.finalizarViaje(id),
+      api.conductor.enviarSos('Ayuda'),
       api.conductor.iniciarRastreo(),
       api.conductor.detenerRastreo(),
       api.conductor.enviarUbicacion(ubicacion),
@@ -72,8 +83,16 @@ describe('endpoints de la API TripBus', () => {
       api.admin.seed(),
     ])
 
-    expect(fetchMock).toHaveBeenCalledTimes(48)
+    expect(fetchMock).toHaveBeenCalledTimes(54)
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/driver/location')).toBe(true)
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/driver/location/batch')).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/driver/trips')).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/driver/trips/active')).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/driver/trips/id-1/start')).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/driver/trips/id-1/finish')).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/driver/sos')).toBe(true)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/itineraries/id-1/manifest?format=csv')).toBe(true)
+    const batch = fetchMock.mock.calls.find(([url]) => url === '/api/v1/driver/location/batch')
+    expect(JSON.parse(String(batch?.[1]?.body))).toEqual([ubicacion])
   })
 })

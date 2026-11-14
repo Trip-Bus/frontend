@@ -147,6 +147,52 @@ export type DetalleItinerario = {
   paradas: Parada[]
 }
 
+/** GET /driver/trips: viaje asignado al conductor autenticado. */
+export type ViajeConductor = {
+  itineraryId: Uuid
+  busId: Uuid
+  origen: string
+  destino: string
+  fechaSalida: FechaIso
+  fechaLlegada: FechaIso
+  rol: 'PRINCIPAL' | 'RELEVO' | string
+  estado: string
+  ventanaInicio: FechaIso
+  ventanaFin: FechaIso
+  puedeCompartirUbicacion: boolean
+  iniciado: boolean
+  finalizado: boolean
+}
+
+export type ChecklistInicioViaje = {
+  manifiestoRevisado: boolean
+  documentosBus: boolean
+  lucesYLlantas: boolean
+  botiquinYExtintor: boolean
+}
+
+export type ProgresoViaje = {
+  itineraryId: Uuid
+  iniciadoEn: FechaIso | null
+  finalizadoEn: FechaIso | null
+  estadoRastreo: string
+}
+
+export type AlertaConductor = {
+  alertId: Uuid
+  itineraryId: Uuid
+  companyId: Uuid
+  busId: Uuid
+  tipo: string
+  gravedad: string
+  lat: number | null
+  lng: number | null
+  mensaje: string
+  puedeContinuar: boolean | null
+  estado: string
+  creadoEn: FechaIso
+}
+
 export type TipoCelda = 'ASIENTO' | 'PASILLO' | 'BANO' | 'CONDUCTOR' | 'ESCALERA' | 'PUERTA' | 'VACIO'
 export type Celda = { fila: number; columna: number; tipo: TipoCelda; asiento?: string }
 export type Piso = { piso: number; filas: number; columnas: number; celdas: Celda[] }
@@ -365,6 +411,12 @@ export type UbicacionConductorRequest = {
 export type RespuestaUbicacionConductor = {
   aceptada: boolean
   motivo?: string
+}
+
+export type RespuestaLoteUbicaciones = {
+  aceptadas: number
+  descartadas: number
+  lecturas: RespuestaUbicacionConductor[]
 }
 
 export type Novedad = {

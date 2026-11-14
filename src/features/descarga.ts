@@ -5,7 +5,12 @@ export function descargarJson(datos: unknown, nombre: string) {
 
 /** Descarga texto plano como archivo (p. ej. los códigos de recuperación). */
 export function descargarTexto(texto: string, nombre: string, tipo = 'text/plain') {
-  const url = URL.createObjectURL(new Blob([texto], { type: `${tipo};charset=utf-8` }))
+  descargarBlob(new Blob([texto], { type: `${tipo};charset=utf-8` }), nombre)
+}
+
+/** Descarga un archivo binario recibido del servidor. */
+export function descargarBlob(archivo: Blob, nombre: string) {
+  const url = URL.createObjectURL(archivo)
   const a = document.createElement('a')
   a.href = url
   a.download = nombre

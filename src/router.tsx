@@ -34,6 +34,12 @@ export const router = createBrowserRouter([
       { path: '/restablecer', lazy: () => import('./pantallas/Restablecer').then((m) => ({ Component: m.Restablecer })) },
       { path: '/verificar-correo', lazy: () => import('./pantallas/VerificarCorreo').then((m) => ({ Component: m.VerificarCorreo })) },
       {
+        element: <RequiereRol roles={['CONDUCTOR']} />,
+        children: [
+          { path: '/conductor', lazy: () => import('./pantallas/Conductor').then((m) => ({ Component: m.Conductor })) },
+        ],
+      },
+      {
         element: <RequiereSesion />,
         children: [
           {

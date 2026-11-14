@@ -7,6 +7,7 @@ import {
   EVENTO_SESION_EXPIRADA,
   construirQuery,
   solicitar,
+  solicitarBlob,
   textoError,
 } from './api'
 import { sesion } from './sesion'
@@ -76,6 +77,39 @@ describe('cliente de la API', () => {
     const headers = (init ?? {}).headers as Record<string, string>
     expect(url).toBe('/api/v1/bookings/b1/pay')
     expect(headers['Idempotency-Key']).toBe('k-1')
+  })
+
+  it('descarga una respuesta protegida como Blob y conserva el manejo de errores JSON', async () => {
+    sesion.iniciar({
+      accessToken: 'access',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      userId: 'user-1',
+      rol: 'OPERADOR',
+    })
+    const csv = 'nombre,asiento\nAna,1A'
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      new Response(csv, { status: 200, headers: { 'Content-Type': 'text/csv' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const archivo = await solicitarBlob('GET', '/itineraries/trip-1/manifest', {
+      auth: 'requerido',
+      query: { format: 'csv' },
+    })
+
+    expect(await archivo.text()).toBe(csv)
+    const [url, init = {}] = fetchMock.mock.calls[0]
+    const headers = init.headers as Record<string, string>
+    expect(url).toBe('/api/v1/itineraries/trip-1/manifest?format=csv')
+    expect(headers.Authorization).toBe('Bearer access')
+    expect(headers.Accept).toBe('text/csv')
+
+    fetchMock.mockImplementationOnce(async () =>
+      respuesta(403, { error: { code: 'FORBIDDEN', message: 'denegado' } }),
+    )
+    const error = await fallo(solicitarBlob('GET', '/itineraries/trip-1/manifest', { auth: 'requerido' }))
+    expect(error.status).toBe(403)
+    expect(error.code).toBe('FORBIDDEN')
   })
 
   it('exige sesión cuando la ruta lo pide', async () => {

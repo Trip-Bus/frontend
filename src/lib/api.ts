@@ -39,7 +39,7 @@ export class ApiError extends Error {
   }
 }
 
-type Opciones = {
+type OpcionesBase = {
   /** 'requerido': falla si no hay sesión. 'opcional': manda el token si existe. 'ninguno': nunca. */
   auth?: 'requerido' | 'opcional' | 'ninguno'
   body?: unknown
@@ -49,13 +49,19 @@ type Opciones = {
   signal?: AbortSignal
 }
 
-export async function solicitar<T>(metodo: string, ruta: string, opciones: Opciones = {}): Promise<T> {
+type Opciones = OpcionesBase & { responseType?: 'json' | 'blob' }
+
+export async function solicitar<T>(metodo: string, ruta: string, opciones: OpcionesBase = {}): Promise<T> {
   return ejecutar<T>(metodo, ruta, opciones, true)
 }
 
+export function solicitarBlob(metodo: string, ruta: string, opciones: OpcionesBase = {}): Promise<Blob> {
+  return ejecutar<Blob>(metodo, ruta, { ...opciones, responseType: 'blob' }, true)
+}
+
 async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, permitirRenovacion: boolean): Promise<T> {
-  const { auth = 'opcional', body, query, idempotencyKey, signal } = opciones
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  const { auth = 'opcional', body, query, responseType = 'json', idempotencyKey, signal } = opciones
+  const headers: Record<string, string> = { Accept: responseType === 'blob' ? 'text/csv' : 'application/json' }
 
   const token = auth === 'ninguno' ? null : sesion.token()
   if (auth === 'requerido' && !token) {
@@ -80,10 +86,9 @@ async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, per
 
   if (respuesta.status === 204) return undefined as T
 
-  const texto = await respuesta.text()
-  const datos = texto ? intentarJson(texto) : null
-
   if (!respuesta.ok) {
+    const texto = await respuesta.text()
+    const datos = texto ? intentarJson(texto) : null
     const err = (datos as ErrorApi | null)?.error
     const retry = Number(respuesta.headers.get('Retry-After'))
     const apiError = new ApiError(
@@ -116,6 +121,9 @@ async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, per
     throw apiError
   }
 
+  if (responseType === 'blob') return (await respuesta.blob()) as T
+  const texto = await respuesta.text()
+  const datos = texto ? intentarJson(texto) : null
   return datos as T
 }
 

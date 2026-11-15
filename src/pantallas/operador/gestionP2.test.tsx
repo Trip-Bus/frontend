@@ -228,7 +228,7 @@ describe('taquilla', () => {
       '/box-office/sales?': () =>
         Response.json({ fecha: '2099-01-10', vendedor: null, cantidadVentas: 1, cantidadTiquetes: 1, cantidadAsientos: 1, totalEfectivo: 50_000, totalReembolsado: 0, ventas: [{ bookingId: 'b', estado: 'CONFIRMADA', ticketId: 't', estadoTiquete: 'EMITIDO', vendidoEn: '2099-01-10T09:00:00Z', origen: 'Bogotá', destino: 'Tunja', fechaSalida: '', seatNumbers: ['1'], compradorNombre: 'Luis', total: 50_000 }] }),
       '/box-office/sales': () => Response.json({ bookingId: 'b', estado: 'CONFIRMADA', ticketId: 't-9', compradorRegistrado: true, itineraryId: 'i-1', origen: 'Bogotá', destino: 'Tunja', fechaSalida: '', seatNumbers: ['1'], total: 50_000, moneda: 'COP', metodoPago: 'EFECTIVO', vendidoEn: '' }, { status: 201 }),
-      '/tickets/t-9/pdf': () => new Response(new Blob(['%PDF'])),
+      '/tickets/t-9/pdf': () => new Response('%PDF'),
     })
     montar(f, () => h(Taquilla))
     await screen.findByRole('option', { name: /Bogotá → Tunja/ })
@@ -246,7 +246,7 @@ describe('taquilla', () => {
     expect((venta[1]!.headers as Record<string, string>)['Idempotency-Key']).toBeTruthy()
     expect(JSON.parse(String(venta[1]?.body))).toMatchObject({ itineraryId: 'i-1', seatNumbers: ['1'], comprador: { nombre: 'Luis Gómez', email: 'luis@x.co' } })
     fireEvent.click(screen.getByRole('button', { name: 'Imprimir tiquete' }))
-    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.any(Blob), 'tiquete-t-9.pdf'))
+    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.objectContaining({ size: expect.any(Number) }), 'tiquete-t-9.pdf'))
 
     fireEvent.click(screen.getByRole('tab', { name: 'Cierre de caja' }))
     expect(await screen.findByText(/· Luis/)).toBeTruthy()

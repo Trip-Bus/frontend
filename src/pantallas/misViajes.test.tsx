@@ -74,9 +74,9 @@ describe('mis viajes', () => {
       'scope=proximos&page=0': () => pagina([viaje({}), viaje({ bookingId: 'b-2', canal: 'TAQUILLA', tramo: { fromOrden: 2, paradaAbordaje: 'Chocontá', toOrden: 3, paradaBajada: 'Tunja' } })], 0, 2, 3),
       'scope=proximos&page=1': () => pagina([viaje({ bookingId: 'b-3', estado: 'REPROGRAMADA', estadoTiquete: 'REPROGRAMADO' })], 1, 2, 3),
       '/tickets/t-1/resend': () => new Response(null, { status: 202 }),
-      '/tickets/t-1/pdf': () => new Response(new Blob(['%PDF'])),
+      '/tickets/t-1/pdf': () => new Response('%PDF'),
       '/bookings/b-1': () => Response.json({ bookingId: 'b-1', pago: { paymentId: 'pay-1' } }),
-      '/payments/pay-1/receipt.pdf': () => new Response(new Blob(['%PDF'])),
+      '/payments/pay-1/receipt.pdf': () => new Response('%PDF'),
       '/share-links': () => Response.json({ codigo: 'ABCD2345', itineraryId: 'i-1', venceEn: '2099-01-02T00:00:00Z' }, { status: 201 }),
     })
     montar(fetchMock)
@@ -98,9 +98,9 @@ describe('mis viajes', () => {
     fireEvent.click(within(hoja).getByRole('button', { name: 'Reenviar al correo' }))
     await waitFor(() => expect(toast).toHaveBeenCalledWith('Te reenviamos el tiquete al correo.'))
     fireEvent.click(within(hoja).getByRole('button', { name: 'Descargar el tiquete (PDF)' }))
-    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.any(Blob), 'tiquete-t-1.pdf'))
+    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.objectContaining({ size: expect.any(Number) }), 'tiquete-t-1.pdf'))
     fireEvent.click(within(hoja).getByRole('button', { name: 'Comprobante de pago' }))
-    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.any(Blob), 'comprobante-b-1.pdf'))
+    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.objectContaining({ size: expect.any(Number) }), 'comprobante-b-1.pdf'))
     fireEvent.click(within(hoja).getByRole('button', { name: 'Compartir mi viaje' }))
     await waitFor(() => expect(compartir).toHaveBeenCalledWith(expect.objectContaining({ url: `${location.origin}/compartido/ABCD2345` })))
   })
@@ -113,7 +113,7 @@ describe('mis viajes', () => {
           viaje({ bookingId: 'b-r', estado: 'REEMBOLSADA', estadoTiquete: 'ANULADO', ticketId: 't-r', puedeReprogramar: false, puedeCambiarAsiento: false }),
           viaje({ bookingId: 'b-n', estadoTiquete: 'NO_SHOW', ticketId: 't-n', puedeReprogramar: false, puedeCambiarAsiento: false }),
         ]),
-      '/refunds/ref-1/receipt.pdf': () => new Response(new Blob(['%PDF'])),
+      '/refunds/ref-1/receipt.pdf': () => new Response('%PDF'),
       '/bookings/b-r': () => Response.json({ bookingId: 'b-r', pago: null }),
     })
     montar(fetchMock, '/mis-tiquetes?pestana=pasados')
@@ -122,7 +122,7 @@ describe('mis viajes', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Bogotá a Tunja/ })[0])
     const hoja = await screen.findByRole('dialog')
     fireEvent.click(within(hoja).getByRole('button', { name: 'Comprobante de reembolso' }))
-    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.any(Blob), 'reembolso-b-r.pdf'))
+    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.objectContaining({ size: expect.any(Number) }), 'reembolso-b-r.pdf'))
     fireEvent.click(within(hoja).getByRole('button', { name: 'Comprobante de pago' }))
     await waitFor(() => expect(toast).toHaveBeenCalledWith('El comprobante estará listo cuando se apruebe el pago.'))
     cleanup()

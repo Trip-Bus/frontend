@@ -39,7 +39,7 @@ function servidor(reservaActual: () => Reserva, alPagar: (body: unknown) => Resp
     if (url.endsWith('/bookings/b-1/pay')) return alPagar(JSON.parse(String(init?.body)))
     if (url.endsWith('/bookings/b-1')) return Response.json(reservaActual())
     if (url.endsWith('/payments/pse/banks')) return Response.json([{ codigo: '1', nombre: 'Banco que aprueba' }])
-    if (url.includes('/receipt.pdf')) return new Response(new Blob(['%PDF']), { status: 200 })
+    if (url.includes('/receipt.pdf')) return new Response('%PDF', { status: 200 })
     if (url.includes('/itineraries/')) return Response.json(detalle)
     return Response.json({})
   })
@@ -155,7 +155,7 @@ describe('pago', () => {
     expect(await screen.findByText('Pago aprobado')).toBeTruthy()
     expect(screen.getByText(/con Nequi/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Descargar comprobante de pago' }))
-    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.any(Blob), 'comprobante-b-1.pdf'))
+    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.objectContaining({ size: expect.any(Number) }), 'comprobante-b-1.pdf'))
     expect(screen.getByRole('link', { name: 'Ver mi pase de abordar' }).getAttribute('href')).toBe('/pase/t-1')
   })
 

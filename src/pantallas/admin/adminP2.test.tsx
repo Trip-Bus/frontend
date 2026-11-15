@@ -101,7 +101,7 @@ describe('facturación', () => {
     fireEvent.change(screen.getByLabelText('Mes'), { target: { value: '2099-02' } })
     await waitFor(() => expect(f.mock.calls.some(([u]) => String(u).includes('mes=2099-02'))).toBe(true))
     fireEvent.click(screen.getByRole('button', { name: 'CSV' }))
-    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.any(Blob), 'plataforma_2099-02.csv'))
+    await waitFor(() => expect(descargarBlob).toHaveBeenCalledWith(expect.objectContaining({ size: expect.any(Number) }), 'plataforma_2099-02.csv'))
   })
 })
 

@@ -127,7 +127,7 @@ function DosPasos({ activa }: { activa: boolean }) {
     onSuccess: (config) => setPaso({ tipo: 'escanear', config }),
     onError: (e) => {
       // Ya estaba activa (p. ej. desde otro equipo): se refresca el estado.
-      if (e instanceof ApiError && e.code === 'MFA_ALREADY_ENABLED') queryClient.invalidateQueries({ queryKey: ['mis-datos'] })
+      if (e instanceof ApiError && e.code === 'MFA_ALREADY_ENABLED') void queryClient.invalidateQueries({ queryKey: ['mis-datos'] })
     },
   })
 
@@ -140,9 +140,9 @@ function DosPasos({ activa }: { activa: boolean }) {
         codigos={paso.codigos}
         listo={() => {
           setPaso({ tipo: 'inicio' })
-          queryClient.invalidateQueries({ queryKey: ['mis-datos'] })
+          void queryClient.invalidateQueries({ queryKey: ['mis-datos'] })
           // Con la 2FA activa la API vuelve a responder: se recargan los datos que hubieran fallado.
-          queryClient.invalidateQueries()
+          void queryClient.invalidateQueries()
         }}
       />
     )
@@ -330,7 +330,7 @@ function HojaDesactivar({ abierta, alCambiar }: { abierta: boolean; alCambiar: (
     mutationFn: () => api.cuenta.desactivarMfa(password, normalizarCodigo(codigo)),
     onSuccess: () => {
       toast('Desactivamos la verificación en dos pasos.')
-      queryClient.invalidateQueries({ queryKey: ['mis-datos'] })
+      void queryClient.invalidateQueries({ queryKey: ['mis-datos'] })
       cerrar(false)
     },
   })
@@ -391,7 +391,7 @@ function SalirBoton() {
     onSettled: () => {
       sesion.cerrar()
       queryClient.clear()
-      navigate('/', { replace: true })
+      void navigate('/', { replace: true })
     },
   })
   return (

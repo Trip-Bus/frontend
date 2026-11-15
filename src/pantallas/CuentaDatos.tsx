@@ -157,7 +157,7 @@ function HojaEliminar({ abierta, alCambiar }: { abierta: boolean; alCambiar: (v:
       sesion.cerrar()
       queryClient.clear()
       toast('Eliminamos tu cuenta. Gracias por viajar con TripBus.')
-      navigate('/', { replace: true })
+      void navigate('/', { replace: true })
     },
   })
   const listo = password.length > 0 && confirmaEliminar(confirmacion)

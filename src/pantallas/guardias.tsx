@@ -28,7 +28,8 @@ export function RequiereRol({ roles, requiereEmpresa = false }: { roles: Rol[]; 
   if (!s) return <Navigate to={`/entrar?siguiente=${encodeURIComponent(pathname)}`} replace />
   if (!roles.includes(s.rol)) return <SinAcceso rol={s.rol} />
 
-  return requiereEmpresa ? <RequiereEmpresa userId={s.userId} /> : <Outlet />
+  // El ADMIN no pertenece a una empresa: en las pantallas de operador la elige (A-06).
+  return requiereEmpresa && s.rol !== 'ADMIN' ? <RequiereEmpresa userId={s.userId} /> : <Outlet />
 }
 
 /** Búsqueda pública: conserva el acceso anónimo y evita que personal use pantallas de pasajero. */

@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import fotoBus from '@/assets/entrar-bus.jpg'
 import { BotonVolver } from '@/components/marca/BotonVolver'
+import { BotonGoogle } from '@/components/marca/BotonGoogle'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
 import { CampoContrasena, ErrorFormulario } from '@/components/ui/formulario'
@@ -27,6 +28,8 @@ export function Entrar() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const [modo, setModo] = useState<Modo>('entrar')
+  // Desafío de 2FA de una cuenta que entró con Google.
+  const [desafioGoogle, setDesafioGoogle] = useState<string | null>(null)
 
   const alEntrar = (auth: AuthResponse) => {
     sesion.iniciar(auth)
@@ -91,7 +94,16 @@ export function Entrar() {
           ))}
         </div>
 
-        {modo === 'entrar' ? <FormEntrar alEntrar={alEntrar} /> : <FormRegistro alEntrar={alEntrar} />}
+        {desafioGoogle ? (
+          <FormDosPasos mfaToken={desafioGoogle} alEntrar={alEntrar} volver={() => setDesafioGoogle(null)} />
+        ) : (
+          <>
+            {modo === 'entrar' ? <FormEntrar alEntrar={alEntrar} /> : <FormRegistro alEntrar={alEntrar} />}
+            <div className="mt-4">
+              <BotonGoogle alEntrar={alEntrar} alDesafio={setDesafioGoogle} />
+            </div>
+          </>
+        )}
       </div>
     </Pantalla>
   )

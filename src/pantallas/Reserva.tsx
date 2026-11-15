@@ -12,12 +12,13 @@ import { Button } from '@/components/ui/button'
 import { Campo } from '@/components/ui/input'
 import { olvidarRetencion, recordarRetencion, recordarViajero, ultimoViajero } from '@/features/retenciones'
 import { useSegundosRestantes } from '@/hooks/useAhora'
-import { textoError } from '@/lib/api'
+import { ApiError, textoError } from '@/lib/api'
 import { codigoCiudad } from '@/lib/ciudades'
 import { api } from '@/lib/endpoints'
 import { dinero, fechaCorta, horaCorta } from '@/lib/formato'
 import { useSesion } from '@/lib/sesion'
-import type { PasajeroRequest, TipoDocumento } from '@/lib/tipos'
+import type { PasajeroRequest, TipoDocumento, TipoPasajero } from '@/lib/tipos'
+import { Desglose, TotalReserva } from './reserva/Desglose'
 
 const TIPOS: { valor: TipoDocumento; nombre: string }[] = [
   { valor: 'CC', nombre: 'Cédula de ciudadanía' },
@@ -25,6 +26,12 @@ const TIPOS: { valor: TipoDocumento; nombre: string }[] = [
   { valor: 'TI', nombre: 'Tarjeta de identidad' },
   { valor: 'PA', nombre: 'Pasaporte' },
   { valor: 'PEP', nombre: 'Permiso especial (PEP)' },
+]
+
+const TIPOS_PASAJERO: { valor: TipoPasajero; nombre: string }[] = [
+  { valor: 'ADULTO', nombre: 'Adulto' },
+  { valor: 'NINO', nombre: 'Niño' },
+  { valor: 'ADULTO_MAYOR', nombre: 'Adulto mayor' },
 ]
 
 type Errores = Record<number, Partial<Record<keyof PasajeroRequest, string>>>
@@ -37,8 +44,9 @@ function validarPasajero(p: PasajeroRequest): Partial<Record<keyof PasajeroReque
 }
 
 /**
- * Datos del viajero y total (US-031). El puesto ya está apartado: aquí se crea la reserva
- * (POST /bookings) y se pasa al pago.
+ * Datos del viajero y total (US-031). El puesto ya está apartado: aquí se elige el tipo de cada pasajero,
+ * se aplica un cupón y se ve el desglose (tramo, temporada, descuento, recargo; US-138/141/142/147) antes de
+ * crear la reserva (POST /bookings) y pasar al pago.
  */
 export function Reserva() {
   const { holdId = '' } = useParams()
@@ -71,15 +79,23 @@ export function Reserva() {
 
   const [pasajeros, setPasajeros] = useState<PasajeroRequest[] | null>(null)
   const [errores, setErrores] = useState<Errores>({})
+  const [cupon, setCupon] = useState('')
+  const [errorCupon, setErrorCupon] = useState<string>()
   const restantes = useSegundosRestantes(r?.expiraEn)
 
   const crear = useMutation({
-    mutationFn: (lista: PasajeroRequest[]) => api.reservas.crear(holdId, lista),
+    mutationFn: (lista: PasajeroRequest[]) => api.reservas.crear(holdId, lista, cupon.trim()),
     onSuccess: (reserva, lista) => {
-      recordarViajero(lista[0])
+      recordarViajero({ ...lista[0], tipoPasajero: undefined })
       navigate(`/pago/${reserva.bookingId}`, { replace: true })
     },
-    onError: (e) => toast(textoError(e)),
+    onError: (e) => {
+      if (e instanceof ApiError && e.code.startsWith('COUPON_')) {
+        setErrorCupon(e.paraUsuario)
+        return
+      }
+      toast(textoError(e))
+    },
   })
 
   const extender = useMutation({
@@ -155,10 +171,10 @@ export function Reserva() {
     )
   }
 
-  const base: PasajeroRequest = ultimoViajero() ?? { nombre: usuario.data?.nombre ?? '', tipoDocumento: 'CC', numeroDocumento: '' }
+  const base: PasajeroRequest = { ...(ultimoViajero() ?? { nombre: usuario.data?.nombre ?? '', tipoDocumento: 'CC', numeroDocumento: '' }), tipoPasajero: 'ADULTO' }
   const lista =
     pasajeros ??
-    r.seatNumbers.map((_, i) => (i === 0 ? base : { nombre: '', tipoDocumento: 'CC' as TipoDocumento, numeroDocumento: '' }))
+    r.seatNumbers.map((_, i) => (i === 0 ? base : { nombre: '', tipoDocumento: 'CC' as TipoDocumento, numeroDocumento: '', tipoPasajero: 'ADULTO' as TipoPasajero }))
   const cambiar = (i: number, parcial: Partial<PasajeroRequest>) => {
     setPasajeros(lista.map((p, k) => (k === i ? { ...p, ...parcial } : p)))
     setErrores((e) => ({ ...e, [i]: {} }))
@@ -166,7 +182,7 @@ export function Reserva() {
 
   const d = detalle.data
   const precio = oferta.data?.precioOferta ?? d?.precioBase ?? null
-  const total = precio == null ? null : precio * r.seatNumbers.length
+  const totalSimple = precio == null ? null : precio * r.seatNumbers.length
 
   const enviar = (ev: FormEvent) => {
     ev.preventDefault()
@@ -264,6 +280,24 @@ export function Reserva() {
                 ))}
               </select>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor={`pasajero-${i}`} className="text-[13px] font-semibold">
+                Tipo de pasajero
+              </label>
+              <select
+                id={`pasajero-${i}`}
+                value={p.tipoPasajero ?? 'ADULTO'}
+                disabled={!!r.offerId}
+                onChange={(e) => cambiar(i, { tipoPasajero: e.target.value as TipoPasajero })}
+                className="h-13 w-full rounded-control border-[1.5px] border-control bg-superficie px-3 text-base"
+              >
+                {TIPOS_PASAJERO.map((t) => (
+                  <option key={t.valor} value={t.valor}>
+                    {t.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Campo
               etiqueta="Número de documento"
               inputMode={p.tipoDocumento === 'PA' ? 'text' : 'numeric'}
@@ -277,6 +311,26 @@ export function Reserva() {
             />
           </fieldset>
         ))}
+
+        {!r.offerId && (
+          <section aria-label="Cupón de descuento" className="flex flex-col gap-3 rounded-tarjeta bg-superficie p-4">
+            <Campo
+              etiqueta="Cupón de descuento (opcional)"
+              autoCapitalize="characters"
+              autoComplete="off"
+              value={cupon}
+              maxLength={40}
+              onChange={(e) => {
+                setCupon(e.target.value.replace(/\s/g, '').toUpperCase())
+                setErrorCupon(undefined)
+              }}
+              error={errorCupon}
+              ayuda={cupon ? 'Lo validamos al ir a pagar y el total se ajusta.' : undefined}
+            />
+          </section>
+        )}
+
+        <Desglose itineraryId={r.itineraryId} tramo={{ from: r.fromOrden, to: r.toOrden }} tipos={lista.map((p) => p.tipoPasajero ?? 'ADULTO')} deOferta={!!r.offerId} />
 
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-[14px]">
           {!r.extendido && (restantes ?? 600) <= 300 && (
@@ -293,7 +347,7 @@ export function Reserva() {
       <footer className="sticky bottom-0 flex flex-col gap-3 rounded-t-[28px] bg-superficie px-5 pt-3.5 pb-[calc(18px+env(safe-area-inset-bottom,0px))] shadow-[0_-8px_28px_rgba(13,20,17,.08)]">
         <div className="flex items-baseline justify-between">
           <span className="text-[15px] text-texto-2">Total</span>
-          <span className="num text-[26px] font-bold">{dinero(total)}</span>
+          <TotalReserva itineraryId={r.itineraryId} tramo={{ from: r.fromOrden, to: r.toOrden }} tipos={lista.map((p) => p.tipoPasajero ?? 'ADULTO')} deOferta={!!r.offerId} respaldo={totalSimple} />
         </div>
         <Button type="submit" form="form-viajeros" ancho="completo" className="justify-between" disabled={crear.isPending}>
           {crear.isPending ? 'Preparando el pago…' : 'Ir a pagar'}

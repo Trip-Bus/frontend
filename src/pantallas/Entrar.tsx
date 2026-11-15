@@ -30,7 +30,7 @@ export function Entrar() {
 
   const alEntrar = (auth: AuthResponse) => {
     sesion.iniciar(auth)
-    navigate(destinoSeguro(params.get('siguiente')), { replace: true })
+    void navigate(destinoSeguro(params.get('siguiente')), { replace: true })
   }
 
   return (

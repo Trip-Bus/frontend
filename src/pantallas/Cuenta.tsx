@@ -53,7 +53,7 @@ export function Cuenta() {
     onSettled: () => {
       sesion.cerrar()
       setConfirmar(false)
-      navigate('/', { replace: true })
+      void navigate('/', { replace: true })
     },
   })
 

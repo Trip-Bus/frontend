@@ -1,29 +1,45 @@
-import { solicitar } from './api'
+import { solicitar, solicitarBlob } from './api'
+import { sesion } from './sesion'
 import type {
   AuthResponse,
+  AlertaConductor,
+  CambiarPasswordRequest,
+  ChecklistInicioViaje,
+  CodigosRecuperacion,
+  ConfiguracionMfa,
   CrearOfertaRequest,
   CupoOferta,
   DetalleItinerario,
   EstadosAsientos,
   LoginRequest,
   MapaAsientos,
+  MisDatos,
   Novedad,
   NovedadRequest,
   Oferta,
   Pago,
   PagoRequest,
   PasajeroRequest,
+  Perfil,
+  PerfilRequest,
   PosicionRequest,
+  ProgresoViaje,
   RegistroRequest,
+  RespuestaLogin,
+  RespuestaLoteUbicaciones,
   Reserva,
   ReservaOferta,
   ResultadoViaje,
   Retencion,
+  SegundoPasoRequest,
   Seguimiento,
   Tiquete,
   Usuario,
+  UbicacionConductorRequest,
   Uuid,
   ValidacionTiquete,
+  RespuestaUbicacionConductor,
+  ViajeConductor,
 } from './tipos'
 
 /**
@@ -33,11 +49,42 @@ import type {
 export const api = {
   /* ------------------------------------------------ Identity */
   auth: {
-    login: (datos: LoginRequest) => solicitar<AuthResponse>('POST', '/auth/login', { auth: 'ninguno', body: datos }),
+    /** Con 2FA activa responde { mfaRequired, mfaToken } sin tokens (US-106). */
+    login: (datos: LoginRequest) => solicitar<RespuestaLogin>('POST', '/auth/login', { auth: 'ninguno', body: datos }),
+    segundoPaso: (datos: SegundoPasoRequest) =>
+      solicitar<AuthResponse>('POST', '/auth/2fa', { auth: 'ninguno', body: datos }),
     registro: (datos: RegistroRequest) =>
       solicitar<AuthResponse>('POST', '/auth/register', { auth: 'ninguno', body: datos }),
-    logout: () => solicitar<void>('POST', '/auth/logout', { auth: 'requerido' }),
+    logout: () => solicitar<void>('POST', '/auth/logout', { auth: 'requerido', body: { refreshToken: sesion.refreshToken() } }),
     usuario: (id: Uuid) => solicitar<Usuario>('GET', `/users/${id}`, { auth: 'requerido' }),
+    /** US-125: siempre 202 (exista o no el correo). */
+    pedirRecuperacion: (email: string) =>
+      solicitar<void>('POST', '/auth/password-reset/request', { auth: 'ninguno', body: { email } }),
+    restablecer: (token: string, nuevaPassword: string) =>
+      solicitar<void>('POST', '/auth/password-reset/confirm', { auth: 'ninguno', body: { token, nuevaPassword } }),
+    /** US-130: el token del enlace del correo. */
+    verificarCorreo: (token: string) =>
+      solicitar<void>('POST', '/auth/verify-email', { auth: 'ninguno', body: { token } }),
+    reenviarVerificacion: () => solicitar<void>('POST', '/auth/verify-email/resend', { auth: 'requerido' }),
+  },
+
+  /* ------------------------------------------------ Identity: mi cuenta */
+  cuenta: {
+    perfil: () => solicitar<Perfil>('GET', '/users/me', { auth: 'requerido' }),
+    editar: (datos: PerfilRequest) => solicitar<Perfil>('PUT', '/users/me', { auth: 'requerido', body: datos }),
+    /** US-129: responde un token nuevo (los anteriores dejan de valer). */
+    cambiarPassword: (datos: CambiarPasswordRequest) =>
+      solicitar<AuthResponse>('POST', '/users/me/password', { auth: 'requerido', body: datos }),
+    /** US-131 (Ley 1581). */
+    misDatos: () => solicitar<MisDatos>('GET', '/users/me/data', { auth: 'requerido' }),
+    eliminar: (password: string) =>
+      solicitar<void>('POST', '/users/me/delete', { auth: 'requerido', body: { password, confirmacion: 'ELIMINAR' } }),
+    /** US-106 (ADMIN y OPERADOR). */
+    configurarMfa: () => solicitar<ConfiguracionMfa>('POST', '/users/me/2fa/setup', { auth: 'requerido' }),
+    activarMfa: (code: string) =>
+      solicitar<CodigosRecuperacion>('POST', '/users/me/2fa/enable', { auth: 'requerido', body: { code } }),
+    desactivarMfa: (password: string, code: string) =>
+      solicitar<void>('POST', '/users/me/2fa/disable', { auth: 'requerido', body: { password, code } }),
   },
 
   /* ------------------------------------------------ Catalog */
@@ -74,6 +121,8 @@ export const api = {
     pagar: (id: Uuid, pago: PagoRequest, idempotencyKey: string) =>
       solicitar<Pago>('POST', `/bookings/${id}/pay`, { auth: 'requerido', body: pago, idempotencyKey }),
     tiquete: (id: Uuid) => solicitar<Tiquete>('GET', `/tickets/${id}`, { auth: 'requerido' }),
+    manifiestoCsv: (itineraryId: Uuid) =>
+      solicitarBlob('GET', `/itineraries/${itineraryId}/manifest`, { auth: 'requerido', query: { format: 'csv' } }),
     /** Abordaje: conductor, operador o admin leen el QR del pasajero. */
     validarTiquete: (qrCode: string) =>
       solicitar<ValidacionTiquete>('POST', '/tickets/validate', { auth: 'requerido', body: { qrCode } }),
@@ -102,6 +151,28 @@ export const api = {
     /** US-038: ingesta GPS (202, asíncrona). */
     enviarPosicion: (posicion: PosicionRequest) =>
       solicitar<void>('POST', '/telemetry/position', { auth: 'requerido', body: posicion }),
+  },
+
+  /* ------------------------------------------------ Driver tracking */
+  conductor: {
+    misViajes: (fecha?: string) =>
+      solicitar<ViajeConductor[]>('GET', '/driver/trips', { auth: 'requerido', query: { fecha } }),
+    viajeActivo: () => solicitar<ViajeConductor>('GET', '/driver/trips/active', { auth: 'requerido' }),
+    iniciarViaje: (itineraryId: Uuid, checklist: ChecklistInicioViaje, observacion?: string) =>
+      solicitar<ProgresoViaje>('POST', `/driver/trips/${itineraryId}/start`, {
+        auth: 'requerido',
+        body: { checklist, observacion },
+      }),
+    finalizarViaje: (itineraryId: Uuid) =>
+      solicitar<ProgresoViaje>('POST', `/driver/trips/${itineraryId}/finish`, { auth: 'requerido' }),
+    enviarSos: (mensaje?: string) =>
+      solicitar<AlertaConductor>('POST', '/driver/sos', { auth: 'requerido', body: { mensaje } }),
+    iniciarRastreo: () => solicitar<void>('POST', '/driver/tracking/start', { auth: 'requerido' }),
+    detenerRastreo: () => solicitar<void>('POST', '/driver/tracking/stop', { auth: 'requerido' }),
+    enviarUbicacion: (ubicacion: UbicacionConductorRequest) =>
+      solicitar<RespuestaUbicacionConductor | null>('POST', '/driver/location', { auth: 'requerido', body: ubicacion }),
+    enviarUbicaciones: (ubicaciones: UbicacionConductorRequest[]) =>
+      solicitar<RespuestaLoteUbicaciones>('POST', '/driver/location/batch', { auth: 'requerido', body: ubicaciones }),
   },
 
   /* ------------------------------------------------ Administración */

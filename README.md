@@ -30,6 +30,7 @@ Usuario de prueba (con `DEMO_USERS_ENABLED=true` en el backend): `pasajero@tripb
 | `npm run build` | Revisa tipos y genera `dist/` |
 | `npm run lint` | Lint con oxlint |
 | `npm test` | Pruebas (Vitest) |
+| `npm run test:coverage` | Pruebas con cobertura y umbral mínimo del 40% |
 | `npm run preview` | Sirve el build para revisarlo |
 
 ### ¿Cómo llega la app al backend?
@@ -38,14 +39,12 @@ El navegador **solo habla con su propio origen**, así no hay problemas de CORS:
 
 | La app llama a | En desarrollo (Vite) | En producción (NGINX de este repo) |
 |---|---|---|
-| `/api/trips/search` | → `http://localhost:8080/trips/search` | → `http://api-gateway:8080/trips/search` |
-| `/ws` (WebSocket) | → `ws://localhost:16007/ws` | → `${REALTIME_URL}/ws` |
+| `/api/v1/trips/search` | → `http://localhost:18000/trips/search` | → `http://api-gateway:8080/trips/search` |
+| `/ws` (WebSocket) | → `ws://localhost:18000/ws` | → `${REALTIME_URL}/ws` |
 
-En la rama `develop` del backend el API Gateway ya enruta `/ws` (puerto 18000) y el 18007 no se publica
-en PROD: ahí basta con `REALTIME_URL` igual a `API_GATEWAY_URL` (en desarrollo,
-`DEV_WS_TARGET=ws://localhost:18000`).
-
-Para cambiar destinos en desarrollo copia `.env.example` como `.env.local`.
+El cliente usa `/api/v1` como prefijo y Vite/NGINX lo eliminan antes de reenviar las peticiones al
+gateway. En desarrollo ambos proxies usan por defecto el gateway local en `:18000`; para cambiarlo,
+copia `.env.example` como `.env.local`.
 
 ---
 
@@ -66,8 +65,8 @@ src/
     tarjeta.ts             Luhn, marca, formato y token sandbox (el número nunca sale del teléfono)
     ciudades.ts            Códigos cortos de ciudad (BOG, MDE…)
   components/
-    ui/                    Botón, Campo, Hoja inferior (base shadcn/ui)
-    marca/                 Pantalla, BarraInferior, LiveDot, Logo, BotonVolver, MapaBus, Contador,
+    ui/                    Botón, Campo, Hoja inferior (base shadcn/ui), formulario (contraseña con ojo, error)
+    marca/                 Pantalla, BarraInferior, LiveDot, Logo, BotonVolver, Encabezado, MapaBus, Contador,
                            BotonMantener, EstadoVivo, Estados (esqueleto, error, aviso)
   features/
     busqueda.ts            Estado de la búsqueda (URL + última búsqueda)
@@ -75,8 +74,11 @@ src/
     retenciones.ts         Puesto apartado y último viajero (por dispositivo)
     pagos.ts               Idempotency-Key por reserva
     pases.ts               Pases guardados para abrir sin señal
+    cuenta.ts              Reglas de la cuenta: contraseña, celular, código TOTP, archivo de mis datos (con pruebas)
+    descarga.ts            Descargar JSON o texto desde el navegador
     seguimiento.ts         Proyección del mapa, avance sobre la ruta, retraso, simulador
-    gps.ts                 Envío de GPS del conductor (real o simulado)
+    gps.ts                 Rastreo del conductor, Wake Lock y envío GPS real/simulado
+    gpsCola.ts             Cola en memoria (máx. 50) para posiciones sin conexión
     ciudadVisual.ts        "Ciudad de fondo": foto, acento y encuadre de cada destino
   hooks/useAcento.ts       Pone el acento del destino en la variable CSS --acento
   assets/ciudades/         Fotos de los destinos (Vite las empaqueta con hash)
@@ -88,7 +90,10 @@ src/
 | Ruta | Pantalla | Historias |
 |---|---|---|
 | `/` | 01 Bienvenida (solo la primera vez) | — |
-| `/entrar` | Entrar y crear cuenta (política de datos, Ley 1581) | US-001, US-096 |
+| `/entrar` | Entrar y crear cuenta (política de datos, Ley 1581); segundo paso con el código de la app o un código de recuperación si la cuenta tiene 2FA | US-001, US-096, US-106 |
+| `/recuperar` | Olvidé mi contraseña: pide el enlace (siempre la misma respuesta, exista o no el correo) | US-125 |
+| `/restablecer?token=` | Enlace del correo: contraseña nueva (también el alta de OPERADOR o CONDUCTOR por el ADMIN) | US-125, US-103 |
+| `/verificar-correo?token=` | Enlace del correo: confirma el correo al abrir la página | US-130 |
 | `/inicio` | 02 Búsqueda en una frase + drop activo | US-007, US-014 |
 | `/salidas` | 03 Salidas del día: precio por día, regla de 24 h, ocupación | US-007, US-008, US-014 |
 | `/viaje/:id/asientos` | 04 Puestos en vivo: mapa real (1 o 2 pisos), estados por WebSocket, apartar 10 min, conflicto 409 con puesto sugerido | US-016 a 022, US-026 |
@@ -96,13 +101,24 @@ src/
 | `/pago/:bookingId` | 05 Pago con tarjeta "mantén para pagar", Idempotency-Key, aprobado / rechazado / vencido | US-032, US-034 |
 | `/pase/:ticketId` | 06 Pase de abordar con QR (se guarda en el teléfono: abre sin señal), compartir el viaje | US-033 |
 | `/mis-tiquetes` | Próximos, por pagar, en proceso e historial | US-033 |
+| `/cuenta` | Tu perfil (`GET /users/me`), correo sin verificar con "Reenviar enlace", atajos y cerrar sesión | US-128, US-130 |
+| `/cuenta/datos` | Editar nombre y celular; descargar mis datos (JSON); eliminar mi cuenta (contraseña + escribir ELIMINAR) | US-128, US-131 |
+| `/cuenta/seguridad` | Cambiar la contraseña (la sesión sigue con el token nuevo) y verificación en dos pasos (ADMIN y OPERADOR): QR, clave, primer código, 10 códigos de recuperación, desactivar | US-129, US-106 |
 | `/viaje/:id/en-vivo` | 07 Viaje en vivo (público): mapa de la ruta, bus, retraso, paradas, novedades | US-039, US-047 |
 | `/drop/:offerId` | 08 Drop: tiempo y cupo en vivo, "Apartar uno" con documento | US-056, US-058 |
 | `/panel` | Panel de la empresa (conductor, operador, admin): viajes de su empresa, datos demo (admin) | US-005, HT-01 |
 | `/panel/viaje/:id` | Reportar novedad, enviar GPS (del teléfono o simulado), crear / activar / cerrar drops | US-038, US-046, US-054 |
 | `/panel/validar` | Validar el pase al abordar (cámara con BarcodeDetector o texto del QR) | US-033 |
 
-Las rutas de compra exigen sesión; el panel exige rol CONDUCTOR, OPERADOR o ADMIN (US-005).
+Las rutas de compra y de la cuenta exigen sesión; el panel exige rol CONDUCTOR, OPERADOR o ADMIN (US-005).
+El rastreo del conductor inicia y detiene sesión en `/driver/tracking/*`, envía posiciones a
+`/driver/location` cada 8 segundos y reintenta en lote las lecturas en cola cuando vuelve la conexión.
+
+**Verificación en dos pasos obligatoria** (`MFA_REQUIRED_ROLES` en identity): si el rol la exige y aún no está
+activa, la API responde `403 MFA_SETUP_REQUIRED`; `lib/api.ts` emite el evento `tripbus:mfa-obligatoria` y
+`main.tsx` lleva a `/cuenta/seguridad?obligatoria=1`, que solo usa `/users/me/2fa/*` y el cierre de sesión (lo
+único que identity permite en ese estado). El QR del secreto lo dibuja el navegador con `qrcode` (MIT); el
+secreto nunca sale del teléfono.
 
 ### Probar la demo completa
 

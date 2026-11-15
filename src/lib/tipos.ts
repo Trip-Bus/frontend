@@ -20,7 +20,60 @@ export type AuthResponse = {
   expiresAt: FechaIso
   userId: Uuid
   rol: Rol
+  refreshToken?: string | null
+  refreshExpiresAt?: FechaIso | null
 }
+
+export type RenovacionTokensResponse = {
+  accessToken: string
+  expiresAt: FechaIso
+  refreshToken?: string | null
+  refreshExpiresAt?: FechaIso | null
+}
+
+/** US-106: la cuenta tiene verificación en dos pasos: el login no trae tokens, solo el desafío (5 min, un uso). */
+export type MfaRequerido = { mfaRequired: true; mfaToken: string }
+
+export type RespuestaLogin = AuthResponse | MfaRequerido
+
+/** Segundo paso del login: el código de 6 dígitos de la app o un código de recuperación. */
+export type SegundoPasoRequest = { mfaToken: string; code?: string; recoveryCode?: string }
+
+/** GET /users/me (US-128). */
+export type Perfil = {
+  id: Uuid
+  email: string
+  emailVerificado: boolean
+  nombre: string
+  telefono: string | null
+  documentoIdentidad: string | null
+  rol: Rol
+  companyId: Uuid | null
+  fechaCreacion: FechaIso
+}
+
+export type PerfilRequest = { nombre: string; telefono: string | null }
+
+export type CambiarPasswordRequest = { passwordActual: string; passwordNueva: string }
+
+/** GET /users/me/data (US-131, Ley 1581): lo que TripBus guarda de la persona. */
+export type MisDatos = {
+  perfil: Record<string, unknown>
+  rol: Rol
+  companyId: Uuid | null
+  emailVerificado: boolean
+  emailVerificadoEn: FechaIso | null
+  consentimientos: Record<string, unknown>[]
+  sesionesActivas: Record<string, unknown>[]
+  verificacionDosPasos: boolean
+  generadoEn: FechaIso
+}
+
+/** POST /users/me/2fa/setup: secreto TOTP y el enlace otpauth:// que se muestra como QR. */
+export type ConfiguracionMfa = { secret: string; otpauthUri: string }
+
+/** POST /users/me/2fa/enable: 10 códigos de un solo uso, se muestran una sola vez. */
+export type CodigosRecuperacion = { recoveryCodes: string[] }
 
 export type LoginRequest = { email: string; password: string }
 
@@ -92,6 +145,52 @@ export type DetalleItinerario = {
   moneda: string
   ofertaActiva: OfertaResumen | null
   paradas: Parada[]
+}
+
+/** GET /driver/trips: viaje asignado al conductor autenticado. */
+export type ViajeConductor = {
+  itineraryId: Uuid
+  busId: Uuid
+  origen: string
+  destino: string
+  fechaSalida: FechaIso
+  fechaLlegada: FechaIso
+  rol: 'PRINCIPAL' | 'RELEVO' | string
+  estado: string
+  ventanaInicio: FechaIso
+  ventanaFin: FechaIso
+  puedeCompartirUbicacion: boolean
+  iniciado: boolean
+  finalizado: boolean
+}
+
+export type ChecklistInicioViaje = {
+  manifiestoRevisado: boolean
+  documentosBus: boolean
+  lucesYLlantas: boolean
+  botiquinYExtintor: boolean
+}
+
+export type ProgresoViaje = {
+  itineraryId: Uuid
+  iniciadoEn: FechaIso | null
+  finalizadoEn: FechaIso | null
+  estadoRastreo: string
+}
+
+export type AlertaConductor = {
+  alertId: Uuid
+  itineraryId: Uuid
+  companyId: Uuid
+  busId: Uuid
+  tipo: string
+  gravedad: string
+  lat: number | null
+  lng: number | null
+  mensaje: string
+  puedeContinuar: boolean | null
+  estado: string
+  creadoEn: FechaIso
 }
 
 export type TipoCelda = 'ASIENTO' | 'PASILLO' | 'BANO' | 'CONDUCTOR' | 'ESCALERA' | 'PUERTA' | 'VACIO'
@@ -298,6 +397,26 @@ export type PosicionRequest = {
   velocidad?: number | null
   rumbo?: number | null
   timestamp?: FechaIso
+}
+
+export type UbicacionConductorRequest = {
+  lat: number
+  lng: number
+  precision: number
+  velocidad: number | null
+  rumbo: number | null
+  timestamp: FechaIso
+}
+
+export type RespuestaUbicacionConductor = {
+  aceptada: boolean
+  motivo?: string
+}
+
+export type RespuestaLoteUbicaciones = {
+  aceptadas: number
+  descartadas: number
+  lecturas: RespuestaUbicacionConductor[]
 }
 
 export type Novedad = {

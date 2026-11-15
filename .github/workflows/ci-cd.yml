@@ -34,7 +34,13 @@ jobs:
         run: npm run lint
 
       - name: Pruebas
-        run: npm test
+        run: npm run test:coverage
+
+      - name: SonarQube Cloud
+        if: github.ref == 'refs/heads/develop'
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       - name: Tipos + build
         run: npm run build

@@ -1,13 +1,14 @@
 import { useMutation } from '@tanstack/react-query'
-import { Eye, EyeOff } from 'lucide-react'
-import { useState, type ComponentProps, type FormEvent } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useState, type FormEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 import fotoBus from '@/assets/entrar-bus.jpg'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
+import { CampoContrasena, ErrorFormulario } from '@/components/ui/formulario'
 import { Campo } from '@/components/ui/input'
 import { useAcento } from '@/hooks/useAcento'
+import { esMfaRequerido, normalizarCodigo, passwordValida } from '@/features/cuenta'
 import { ApiError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
 import { sesion } from '@/lib/sesion'
@@ -96,35 +97,29 @@ export function Entrar() {
   )
 }
 
-/** Contraseña con botón para mostrarla: en el celular es fácil equivocarse sin verla. */
-function CampoContrasena(props: Omit<ComponentProps<typeof Campo>, 'type' | 'accion'>) {
-  const [visible, setVisible] = useState(false)
-  return (
-    <Campo
-      {...props}
-      type={visible ? 'text' : 'password'}
-      autoCapitalize="none"
-      autoCorrect="off"
-      spellCheck={false}
-      accion={
-        <button
-          type="button"
-          aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-          aria-pressed={visible}
-          onClick={() => setVisible((v) => !v)}
-          className="tap flex size-11 items-center justify-center rounded-xl text-texto-2"
-        >
-          {visible ? <EyeOff className="size-5" aria-hidden="true" /> : <Eye className="size-5" aria-hidden="true" />}
-        </button>
-      }
-    />
-  )
-}
-
 function FormEntrar({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const login = useMutation({ mutationFn: api.auth.login, onSuccess: alEntrar })
+  // US-106: con la verificación en dos pasos activa, el login devuelve un desafío y se pide el código.
+  const [desafio, setDesafio] = useState<string | null>(null)
+  const login = useMutation({
+    mutationFn: api.auth.login,
+    onSuccess: (r) => (esMfaRequerido(r) ? setDesafio(r.mfaToken) : alEntrar(r)),
+  })
+
+  if (desafio) {
+    return (
+      <FormDosPasos
+        mfaToken={desafio}
+        alEntrar={alEntrar}
+        volver={() => {
+          setDesafio(null)
+          setPassword('')
+          login.reset()
+        }}
+      />
+    )
+  }
 
   const enviar = (e: FormEvent) => {
     e.preventDefault()
@@ -154,11 +149,105 @@ function FormEntrar({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
       />
+      <Link to="/recuperar" className="tap -mt-1 self-start rounded-lg py-1 text-[14px] font-semibold underline underline-offset-4">
+        ¿Olvidaste tu contraseña?
+      </Link>
       {login.error && <ErrorFormulario error={login.error} />}
       <div className="flex-1" />
       <Button type="submit" variante="acento" ancho="completo" disabled={login.isPending || !email || !password}>
         {login.isPending ? 'Entrando…' : 'Entrar'}
       </Button>
+    </form>
+  )
+}
+
+/**
+ * Segundo paso del login (US-106): el código de 6 dígitos de la app de autenticación o, si no se tiene el
+ * teléfono, un código de recuperación. El desafío vence en 5 minutos y sirve una sola vez.
+ */
+function FormDosPasos({
+  mfaToken,
+  alEntrar,
+  volver,
+}: {
+  mfaToken: string
+  alEntrar: (a: AuthResponse) => void
+  volver: () => void
+}) {
+  const [conRecuperacion, setConRecuperacion] = useState(false)
+  const [codigo, setCodigo] = useState('')
+  const paso = useMutation({
+    mutationFn: api.auth.segundoPaso,
+    onSuccess: alEntrar,
+    // El desafío venció o se usó: hay que empezar de nuevo con correo y contraseña.
+    onError: (e) => e instanceof ApiError && e.code === 'MFA_TOKEN_INVALID' && volver(),
+  })
+  const limpio = conRecuperacion ? codigo.trim() : normalizarCodigo(codigo)
+  const listo = conRecuperacion ? limpio.length >= 6 : /^\d{6}$/.test(limpio)
+
+  const enviar = (e: FormEvent) => {
+    e.preventDefault()
+    if (!listo) return
+    paso.mutate(conRecuperacion ? { mfaToken, recoveryCode: limpio } : { mfaToken, code: limpio })
+  }
+
+  return (
+    <form onSubmit={enviar} className="entra mt-5 flex flex-1 flex-col gap-4" noValidate>
+      <p className="text-[15px] leading-snug">
+        {conRecuperacion
+          ? 'Escribe uno de los códigos de recuperación que guardaste al activar la verificación. Cada uno sirve una vez.'
+          : 'Tu cuenta tiene verificación en dos pasos. Abre tu app de autenticación y escribe el código de 6 dígitos.'}
+      </p>
+      {conRecuperacion ? (
+        <Campo
+          key="recuperacion"
+          etiqueta="Código de recuperación"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="go"
+          autoFocus
+          value={codigo}
+          onChange={(e) => setCodigo(e.target.value)}
+          className="font-mono"
+        />
+      ) : (
+        <Campo
+          key="totp"
+          etiqueta="Código de la app"
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          enterKeyHint="go"
+          maxLength={7}
+          autoFocus
+          value={codigo}
+          onChange={(e) => setCodigo(e.target.value)}
+          placeholder="123456"
+          className="font-mono text-[20px] tracking-[0.3em]"
+        />
+      )}
+      <button
+        type="button"
+        onClick={() => {
+          setConRecuperacion((v) => !v)
+          setCodigo('')
+          paso.reset()
+        }}
+        className="tap -mt-1 self-start rounded-lg py-1 text-left text-[14px] font-semibold underline underline-offset-4"
+      >
+        {conRecuperacion ? 'Usar el código de la app' : 'No tengo el teléfono: usar un código de recuperación'}
+      </button>
+      {paso.error && <ErrorFormulario error={paso.error} />}
+      <div className="flex-1" />
+      <div className="flex flex-col gap-2.5">
+        <Button type="submit" variante="acento" ancho="completo" disabled={paso.isPending || !listo}>
+          {paso.isPending ? 'Verificando…' : 'Verificar y entrar'}
+        </Button>
+        <Button type="button" variante="fantasma" ancho="completo" onClick={volver}>
+          Volver
+        </Button>
+      </div>
     </form>
   )
 }
@@ -171,8 +260,8 @@ function FormRegistro({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
     setDatos((d) => ({ ...d, [k]: e.target.value }))
 
   // Mismas reglas que Identity (RegistroRequest.java), para avisar antes de enviar.
-  const passwordValida = datos.password.length >= 8 && /[A-Z]/.test(datos.password) && /\d/.test(datos.password)
-  const completo = datos.nombre.trim() && datos.documentoIdentidad.trim() && datos.email.trim() && passwordValida && acepta
+  const valida = passwordValida(datos.password)
+  const completo = datos.nombre.trim() && datos.documentoIdentidad.trim() && datos.email.trim() && valida && acepta
 
   const enviar = (e: FormEvent) => {
     e.preventDefault()
@@ -209,7 +298,7 @@ function FormRegistro({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
         value={datos.password}
         onChange={cambiar('password')}
         ayuda="Mínimo 8 caracteres, una mayúscula y un número."
-        error={datos.password && !passwordValida ? 'Mínimo 8 caracteres, una mayúscula y un número.' : undefined}
+        error={datos.password && !valida ? 'Mínimo 8 caracteres, una mayúscula y un número.' : undefined}
       />
       <label className="flex items-start gap-3 text-[14px] leading-snug">
         <input
@@ -226,14 +315,5 @@ function FormRegistro({ alEntrar }: { alEntrar: (a: AuthResponse) => void }) {
         {registro.isPending ? 'Creando cuenta…' : 'Crear cuenta'}
       </Button>
     </form>
-  )
-}
-
-function ErrorFormulario({ error }: { error: Error }) {
-  const texto = error instanceof ApiError ? error.paraUsuario : 'Algo salió mal. Intenta de nuevo.'
-  return (
-    <p role="alert" className="rounded-control bg-presencia p-3 text-[14px] font-medium text-alerta">
-      {texto}
-    </p>
   )
 }

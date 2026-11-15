@@ -1,4 +1,5 @@
 import { fechaParaApi, sumarDias } from '@/lib/formato'
+import type { FiltrosBusqueda } from '@/lib/tipos'
 
 /** Lo que el pasajero quiere buscar. La fecha va como YYYY-MM-DD en hora de Colombia. */
 export type Busqueda = {
@@ -72,4 +73,22 @@ function escribir(clave: string, valor: unknown) {
   } catch {
     /* sin almacenamiento disponible */
   }
+}
+
+/** Filtros de la pantalla de salidas (P-01). */
+export type Filtros = Pick<FiltrosBusqueda, 'companyId' | 'franja' | 'precioMin' | 'precioMax' | 'tipoBus' | 'sort' | 'order'>
+
+/** Cuántos filtros hay activos (para el botón "Filtros · 2"). */
+export function cuantosFiltros(f: Filtros): number {
+  return [f.companyId, f.franja, f.precioMin, f.precioMax, f.tipoBus].filter((x) => x != null && x !== '').length
+}
+
+/** Ruta de los puestos de un resultado: con el tramo (US-142) si la búsqueda encontró uno intermedio. */
+export function rutaAsientos(v: { itineraryId: string; fromOrden?: number; toOrden?: number }, pasajeros: number): string {
+  const p = new URLSearchParams({ pasajeros: String(pasajeros) })
+  if (v.fromOrden != null && v.toOrden != null) {
+    p.set('desde', String(v.fromOrden))
+    p.set('hasta', String(v.toOrden))
+  }
+  return `/viaje/${v.itineraryId}/asientos?${p}`
 }

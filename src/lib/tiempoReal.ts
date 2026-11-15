@@ -10,8 +10,14 @@ import { sesion } from './sesion'
  *      {"type":"connect"}: en develop eso abre una sesión anónima de solo lectura para los
  *      tópicos públicos (US-039); en main responde TOKEN_REQUIRED y la app sigue por REST.
  *   3. Con {"type":"connected"} recién se suscribe (antes respondería UNAUTHENTICATED).
- *   cliente → subscribe | unsubscribe | ping | pong
- *   servidor → connected | subscribed | snapshot | event | unsubscribed | ping | pong | error
+ *   cliente → subscribe | resume | unsubscribe | ping | pong
+ *   servidor → connected | subscribed | snapshot | event | resumed | unsubscribed | ping | pong | error
+ *
+ * Orden y reconexión (US-184): cada evento trae `seq` ("<ms>-<n>") y cada snapshot `asOfSeq`. Se guarda el
+ * último por tópico, se ignoran los eventos ya incluidos en el snapshot y al reconectar se manda
+ * {"type":"resume","topic","lastSeq"}: el servidor reenvía lo perdido o manda un snapshot nuevo.
+ * Límite de suscripciones por sesión: 20 autenticada, 5 anónima (o el `maxSubscriptions` de `connected`);
+ * las que sobran esperan turno y entran cuando otra pantalla suelta su tópico.
  *
  * Reglas del documento de arquitectura:
  *  - Heartbeat: el servidor manda ping cada 20 s y cierra a los 45 s sin pong.
@@ -23,23 +29,41 @@ import { sesion } from './sesion'
 export type EstadoConexion = 'sin-sesion' | 'conectando' | 'en-vivo' | 'reconectando'
 
 export type MensajeTopico =
-  | { type: 'snapshot'; topic: string; data: unknown; error?: string; seq?: number | string }
+  | { type: 'snapshot'; topic: string; data: unknown; error?: string; seq?: number | string; asOfSeq?: number | string }
   | { type: 'event'; topic: string; event: string; eventId: string; occurredAt: string; data: unknown; seq?: number | string }
 
 type MensajeServidor =
   | MensajeTopico
-  | { type: 'connected'; userId?: string; role?: string; anonymous?: boolean; heartbeatSeconds: number }
-  | { type: 'subscribed' | 'unsubscribed'; topic: string }
+  | { type: 'connected'; userId?: string; role?: string; anonymous?: boolean; heartbeatSeconds: number; maxSubscriptions?: number }
+  | { type: 'subscribed' | 'unsubscribed' | 'resumed'; topic: string }
   | { type: 'ping' | 'pong' }
   | { type: 'error'; code: string; message: string }
 
 type Manejador = (mensaje: MensajeTopico) => void
 
+const id = (v: string) => v.toLowerCase()
+
 export const topicos = {
-  asientos: (itineraryId: string) => `itinerario:${itineraryId.toLowerCase()}:asientos`,
-  cupoOferta: (offerId: string) => `oferta:${offerId.toLowerCase()}:cupo`,
-  novedades: (itineraryId: string) => `viaje:${itineraryId.toLowerCase()}:eventos`,
-  posicionBus: (busId: string) => `bus:${busId.toLowerCase()}:posicion`,
+  asientos: (itineraryId: string) => `itinerario:${id(itineraryId)}:asientos`,
+  cupoOferta: (offerId: string) => `oferta:${id(offerId)}:cupo`,
+  ofertasActivas: () => 'ofertas:activas',
+  novedades: (itineraryId: string) => `viaje:${id(itineraryId)}:eventos`,
+  /** PositionUpdated, TrackingStatusChanged y EtaUpdated del viaje (reemplaza al deprecado bus:{id}:posicion). */
+  posicionViaje: (itineraryId: string) => `viaje:${id(itineraryId)}:posicion`,
+  tiquetesUsuario: (userId: string) => `usuario:${id(userId)}:tiquetes`,
+  avisosUsuario: (userId: string) => `usuario:${id(userId)}:avisos`,
+  viajeConductor: (userId: string) => `conductor:${id(userId)}:viaje`,
+  alertasEmpresa: (companyId: string) => `empresa:${id(companyId)}:alertas`,
+  flotaEmpresa: (companyId: string) => `empresa:${id(companyId)}:flota`,
+}
+
+export const LIMITE_SUSCRIPCIONES = { autenticada: 20, anonima: 5 }
+
+/** Compara dos `seq` del gateway ("<ms>-<n>" o número): negativo si a es anterior a b. */
+export function compararSeq(a: string, b: string): number {
+  const [ma, na = '0'] = a.split('-')
+  const [mb, nb = '0'] = b.split('-')
+  return Number(ma) - Number(mb) || Number(na) - Number(nb)
 }
 
 function urlBase(): string {
@@ -69,6 +93,9 @@ class ConexionTiempoReal {
   private debeReanudar = false
   private detenidoPorLimite = false
   private ultimoSeq = new Map<string, string>()
+  /** Tópicos que el servidor ya tiene suscritos en esta conexión (cuentan para el límite). */
+  private activos = new Set<string>()
+  private limite = LIMITE_SUSCRIPCIONES.anonima
   /** El servidor (rama main) no acepta sesiones anónimas: sin token no se intenta de nuevo. */
   private anonimoRechazado = false
 
@@ -91,7 +118,7 @@ class ConexionTiempoReal {
     if (!set) {
       set = new Set()
       this.manejadores.set(topico, set)
-      if (this.autenticado) this.enviar({ type: 'subscribe', topic: topico })
+      if (this.autenticado) this.activar(topico, false)
     }
     set.add(manejador)
     this.asegurarConexion()
@@ -103,10 +130,26 @@ class ConexionTiempoReal {
       if (actual.size === 0) {
         this.manejadores.delete(topico)
         this.ultimoSeq.delete(topico)
-        if (this.autenticado) this.enviar({ type: 'unsubscribe', topic: topico })
+        if (this.autenticado && this.activos.delete(topico)) {
+          this.enviar({ type: 'unsubscribe', topic: topico })
+          this.activarPendientes(false)
+        }
         if (this.manejadores.size === 0) this.cerrar('sin-sesion')
       }
     }
+  }
+
+  /** Suscribe (o reanuda) un tópico si hay cupo; si no, queda esperando turno. */
+  private activar(topico: string, reanudar: boolean) {
+    if (this.activos.has(topico) || this.activos.size >= this.limite) return
+    this.activos.add(topico)
+    const ultimo = this.ultimoSeq.get(topico)
+    if (reanudar && ultimo) this.enviar({ type: 'resume', topic: topico, lastSeq: ultimo })
+    else this.enviar({ type: 'subscribe', topic: topico })
+  }
+
+  private activarPendientes(reanudar: boolean) {
+    this.manejadores.forEach((_, topico) => this.activar(topico, reanudar))
   }
 
   private cambiarEstado(e: EstadoConexion) {
@@ -154,21 +197,22 @@ class ConexionTiempoReal {
         case 'connected':
           this.intento = 0
           this.autenticado = true
-          this.manejadores.forEach((_, topico) => {
-            if (this.debeReanudar) {
-              this.enviar({ type: 'resume', topic: topico, lastSeq: this.ultimoSeq.get(topico) ?? '0' })
-            } else {
-              this.enviar({ type: 'subscribe', topic: topico })
-            }
-          })
+          this.activos.clear()
+          this.limite = msg.maxSubscriptions ?? (token ? LIMITE_SUSCRIPCIONES.autenticada : LIMITE_SUSCRIPCIONES.anonima)
+          this.activarPendientes(this.debeReanudar)
           this.debeReanudar = false
           this.cambiarEstado('en-vivo')
           return
         case 'snapshot':
-        case 'event':
-          if (msg.seq !== undefined) this.ultimoSeq.set(msg.topic, String(msg.seq))
+        case 'event': {
+          const seq = msg.type === 'snapshot' ? (msg.asOfSeq ?? msg.seq) : msg.seq
+          const ultimo = this.ultimoSeq.get(msg.topic)
+          // Un evento con seq <= al último ya está incluido (snapshot o evento anterior).
+          if (msg.type === 'event' && seq !== undefined && ultimo && compararSeq(String(seq), ultimo) <= 0) return
+          if (seq !== undefined) this.ultimoSeq.set(msg.topic, String(seq))
           this.manejadores.get(msg.topic)?.forEach((h) => h(msg))
           return
+        }
         case 'error':
           if (!token && (msg.code === 'TOKEN_REQUIRED' || msg.code === 'UNAUTHENTICATED')) {
             // Servidor sin seguimiento público: se queda en REST hasta que haya sesión.
@@ -176,6 +220,7 @@ class ConexionTiempoReal {
             this.cerrar('sin-sesion')
             return
           }
+          if (msg.code === 'TOO_MANY_SUBSCRIPTIONS') return
           if (msg.code === 'TOO_MANY_CONNECTIONS') {
             this.detenidoPorLimite = true
             this.debeReanudar = false
@@ -194,6 +239,7 @@ class ConexionTiempoReal {
       this.ws = null
       this.debeReanudar = this.autenticado
       this.autenticado = false
+      this.activos.clear()
       this.limpiarVigia()
       if (evento.code === 4429) {
         const yaDetenido = this.detenidoPorLimite
@@ -244,6 +290,7 @@ class ConexionTiempoReal {
     const ws = this.ws
     this.ws = null
     this.autenticado = false
+    this.activos.clear()
     ws?.close()
     this.intento = 0
     this.cambiarEstado(estado)

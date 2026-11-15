@@ -1,7 +1,8 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ChevronRight, LayoutGrid, LogOut, QrCode, ShieldCheck, Ticket, UserRound } from 'lucide-react'
+import { Bell, Briefcase, Clock, ChevronRight, LayoutGrid, LogOut, QrCode, Route, ShieldCheck, Ticket, UserRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { ActivarAvisos } from '@/components/marca/ActivarAvisos'
 import { BarraInferior } from '@/components/marca/BarraInferior'
 import { Aviso, Esqueleto } from '@/components/marca/Estados'
 import { Pantalla } from '@/components/marca/Pantalla'
@@ -119,6 +120,16 @@ export function Cuenta() {
             titulo="Seguridad"
             detalle={rol === 'ADMIN' || rol === 'OPERADOR' ? 'Contraseña y verificación en dos pasos' : 'Cambiar tu contraseña'}
           />
+          {rol === 'PASAJERO' && (
+            <>
+              <Fila a="/avisos" icono={<Bell className="size-5" aria-hidden="true" />} titulo="Avisos" detalle="Cambios de tus viajes, reembolsos y ofertas" />
+              <Fila a="/mis-turnos" icono={<Clock className="size-5" aria-hidden="true" />} titulo="Mis turnos" detalle="Listas de espera de buses llenos" />
+              <Fila a="/cuenta/alertas" icono={<Route className="size-5" aria-hidden="true" />} titulo="Rutas que sigues" detalle="Te avisamos cuando salga una oferta" />
+            </>
+          )}
+          {(rol === 'OPERADOR' || rol === 'ADMIN') && (
+            <Fila a={rol === 'ADMIN' ? '/admin' : '/operador'} icono={<Briefcase className="size-5" aria-hidden="true" />} titulo={rol === 'ADMIN' ? 'Administración' : 'Gestión de la empresa'} detalle="Viajes, flota, ofertas y reportes" />
+          )}
           {equipo && (
             <>
               <Fila a="/panel" icono={<LayoutGrid className="size-5" aria-hidden="true" />} titulo="Panel de la empresa" detalle="Viajes, novedades y drops" />
@@ -127,6 +138,7 @@ export function Cuenta() {
           )}
         </nav>
 
+        <ActivarAvisos />
 
         <Button variante="contorno" ancho="completo" onClick={() => setConfirmar(true)}>
           <LogOut className="size-5" aria-hidden="true" />

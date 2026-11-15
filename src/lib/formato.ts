@@ -114,3 +114,38 @@ export function nombreCiudad(entrada: string, ciudades: string[] = []): string {
   const t = entrada.trim()
   return t ? t[0].toLocaleUpperCase(LOCALE) + t.slice(1) : t
 }
+
+/** ISO → "vie 9 oct · 05:30" (hora de Colombia). */
+export function fechaHora(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return `${fechaCorta(iso)} · ${horaCorta(iso)}`
+}
+
+/** Valor de un <input type="datetime-local"> (hora de Colombia, sin zona) → ISO UTC. */
+export function instanteDesdeCampo(valor: string): string {
+  return new Date(`${valor}:00-05:00`).toISOString()
+}
+
+/** ISO → valor para un <input type="datetime-local"> en hora de Colombia ("2026-11-20T06:30"). */
+export function campoDesdeInstante(iso: string): string {
+  return `${fechaParaApi(new Date(iso))}T${horaCorta(iso)}`
+}
+
+/** 0.4567 o 45.67 → "45,7 %". Los porcentajes del backend ya vienen de 0 a 100. */
+export function porcentaje(valor: number | null | undefined): string {
+  if (valor == null || !Number.isFinite(valor)) return 'sin dato'
+  return `${valor.toLocaleString(LOCALE, { maximumFractionDigits: 1 })} %`
+}
+
+/** "2026-11" del mes actual en Colombia. */
+export function mesActual(): string {
+  return fechaParaApi(new Date()).slice(0, 7)
+}
+
+/** Tiempo que queda para decidir (P-08): "Te quedan 23 h 10 min". */
+export function plazoRestante(hasta: string, ahora: number): string {
+  const min = Math.max(0, Math.floor((new Date(hasta).getTime() - ahora) / 60_000))
+  if (min === 0) return 'El plazo terminó'
+  const h = Math.floor(min / 60)
+  return h > 0 ? `Te quedan ${h} h ${String(min % 60).padStart(2, '0')} min` : `Te quedan ${min} min`
+}

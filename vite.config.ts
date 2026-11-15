@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: 'node',
       include: ['src/**/*.test.{ts,tsx}'],
+      // Pantallas con varias consultas encadenadas: más margen cuando corre toda la suite con cobertura.
+      setupFiles: ['./vitest.setup.ts'],
+      testTimeout: 20_000,
       coverage: {
         provider: 'v8',
         reporter: ['text', 'lcov'],

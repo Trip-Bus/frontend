@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, CreditCard, Lock } from 'lucide-react'
+import { Check, FileDown } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -12,30 +12,31 @@ import { LiveDot } from '@/components/marca/LiveDot'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Button } from '@/components/ui/button'
-import { Campo } from '@/components/ui/input'
-import { claveDePago, ESTADOS_EN_PROCESO, MOTIVOS_RECHAZO } from '@/features/pagos'
+import { celularValido, claveDePago, ESTADOS_EN_PROCESO, MOTIVOS_RECHAZO, validarPse, type ErroresPse } from '@/features/pagos'
 import { olvidarRetencion, recordarRetencion } from '@/features/retenciones'
 import { useSegundosRestantes } from '@/hooks/useAhora'
+import { useDescargar } from '@/hooks/useDescargar'
 import { ApiError, textoError } from '@/lib/api'
 import { codigoCiudad } from '@/lib/ciudades'
 import { api } from '@/lib/endpoints'
 import { dinero, fechaCorta, horaCorta } from '@/lib/formato'
-import {
-  formatearNumero,
-  formatearVence,
-  marcaDe,
-  NOMBRE_MARCA,
-  soloDigitos,
-  tokenSandbox,
-  validarTarjeta,
-  type ErroresTarjeta,
-} from '@/lib/tarjeta'
-import type { Reserva } from '@/lib/tipos'
+import { tokenSandbox, validarTarjeta, type ErroresTarjeta } from '@/lib/tarjeta'
+import type { DatosPse, MetodoPago, PagoRequest, Reserva } from '@/lib/tipos'
+import { FormNequi, FormPse, FormTarjeta, SelectorMetodo, type DatosTarjeta } from './pago/Metodos'
+
+const ESPERA: Record<MetodoPago, { titulo: string; detalle: string }> = {
+  TARJETA: { titulo: 'Confirmando con tu banco…', detalle: 'No cierres esta pantalla. Si el intento se repite, cobramos una sola vez.' },
+  PSE: { titulo: 'Esperando la respuesta de tu banco…', detalle: 'Si ya aprobaste el pago en el banco, en unos segundos queda listo.' },
+  NEQUI: { titulo: 'Acepta el pago en tu app Nequi', detalle: 'Abre Nequi y aprueba la notificación. Esta pantalla se actualiza sola.' },
+}
+
+/** El backend responde el método en mayúsculas; los históricos de tarjeta pueden venir vacíos. */
+const metodoDe = (m: string | null | undefined): MetodoPago => (m === 'PSE' || m === 'NEQUI' ? m : 'TARJETA')
 
 /**
- * Pantalla 05. Pago con tarjeta (US-032) sin cobros duplicados (US-034).
- * El resultado llega de forma asíncrona (webhook de la pasarela): la pantalla consulta la reserva
- * cada segundo hasta que queda CONFIRMADA (con tiquete) o rechazada.
+ * Pantalla 05. Pago con tarjeta, PSE o Nequi (US-032, US-143) sin cobros duplicados (US-034).
+ * El resultado llega de forma asíncrona (webhook de la pasarela, regreso del banco o la app Nequi): la pantalla
+ * consulta la reserva cada segundo y escucha `usuario:{id}:tiquetes` hasta que queda CONFIRMADA o rechazada.
  */
 export function Pago() {
   const { bookingId = '' } = useParams()
@@ -55,16 +56,30 @@ export function Pago() {
   })
   useAcento(detalle.data?.destino)
 
-  const [numero, setNumero] = useState('')
-  const [vence, setVence] = useState('')
-  const [cvc, setCvc] = useState('')
+  const [metodo, setMetodo] = useState<MetodoPago>('TARJETA')
+  const [tarjeta, setTarjeta] = useState<DatosTarjeta>({ numero: '', vence: '', cvc: '' })
   const [errores, setErrores] = useState<ErroresTarjeta>({})
+  const [pse, setPse] = useState<DatosPse>({ bancoCodigo: '', tipoPersona: 'NATURAL', tipoDocumento: 'CC', numeroDocumento: '' })
+  const [erroresPse, setErroresPse] = useState<ErroresPse>({})
+  const [telefono, setTelefono] = useState('')
+  const [errorTelefono, setErrorTelefono] = useState<string>()
   const restantes = useSegundosRestantes(r?.holdExpiraEn)
+  const descargar = useDescargar()
+
+  const solicitud = (): PagoRequest =>
+    metodo === 'PSE' ? { metodo, pse: { ...pse, numeroDocumento: pse.numeroDocumento.trim() } } : metodo === 'NEQUI' ? { metodo, nequi: { telefono } } : { metodo, ...tokenSandbox(tarjeta.numero) }
 
   const pagar = useMutation({
-    mutationFn: () => api.reservas.pagar(bookingId, tokenSandbox(numero), claveDePago(bookingId)),
-    onSuccess: () => {
-      queryClient.setQueryData<Reserva>(['reserva', bookingId], (b) => (b ? { ...b, estado: 'PAGO_EN_PROCESO' } : b))
+    mutationFn: () => api.reservas.pagar(bookingId, solicitud(), claveDePago(bookingId, metodo)),
+    onSuccess: (pago) => {
+      // PSE: el pago sigue en la página del banco; al volver a /pago/{id} se consulta el resultado.
+      if (metodo === 'PSE' && pago?.redirectUrl) {
+        globalThis.location.assign(pago.redirectUrl)
+        return
+      }
+      queryClient.setQueryData<Reserva>(['reserva', bookingId], (b) =>
+        b ? { ...b, estado: 'PAGO_EN_PROCESO', pago: b.pago ? { ...b.pago, metodo } : b.pago } : b,
+      )
       void reserva.refetch()
     },
     onError: (e) => {
@@ -104,11 +119,25 @@ export function Pago() {
   const enProceso = pagar.isPending || ESTADOS_EN_PROCESO.has(r.estado)
   const vencida = r.estado === 'EXPIRADA' || (r.estado === 'PENDIENTE_PAGO' && restantes === 0)
 
+  const espera = ESPERA[r.pago?.metodo ? metodoDe(r.pago.metodo) : metodo]
+
   const intentar = () => {
-    const e = validarTarjeta(numero, vence, cvc)
-    setErrores(e)
-    if (Object.keys(e).length) {
-      toast('Revisa los datos de la tarjeta.')
+    if (metodo === 'TARJETA') {
+      const e = validarTarjeta(tarjeta.numero, tarjeta.vence, tarjeta.cvc)
+      setErrores(e)
+      if (Object.keys(e).length) {
+        toast('Revisa los datos de la tarjeta.')
+        return
+      }
+    } else if (metodo === 'PSE') {
+      const e = validarPse(pse)
+      setErroresPse(e)
+      if (Object.keys(e).length) {
+        toast('Revisa los datos de PSE.')
+        return
+      }
+    } else if (!celularValido(telefono)) {
+      setErrorTelefono('Escribe un celular de 10 dígitos que empiece por 3.')
       return
     }
     pagar.mutate()
@@ -162,11 +191,23 @@ export function Pago() {
               <span className="text-[14px]">
                 {dinero(r.total)}
                 {r.pago?.tarjetaUltimos4 ? ` con la tarjeta terminada en ${r.pago.tarjetaUltimos4}` : ''}
+                {r.pago && !r.pago.tarjetaUltimos4 && metodoDe(r.pago.metodo) !== 'TARJETA' ? ` con ${metodoDe(r.pago.metodo) === 'PSE' ? 'PSE' : 'Nequi'}` : ''}
               </span>
             </span>
           </div>
           {resumen}
           <p className="text-[14px] text-texto-2">Tu pase de abordar ya está listo y funciona sin señal.</p>
+          {r.pago?.paymentId && (
+            <Button
+              variante="contorno"
+              ancho="completo"
+              disabled={descargar.isPending}
+              onClick={() => descargar.mutate({ pedir: () => api.reservas.comprobantePago(r.pago!.paymentId), nombre: `comprobante-${r.bookingId}.pdf` })}
+            >
+              <FileDown className="size-5" aria-hidden="true" />
+              {descargar.isPending ? 'Descargando…' : 'Descargar comprobante de pago'}
+            </Button>
+          )}
           <div className="flex-1" />
           {r.ticketId ? (
             <Link to={`/pase/${r.ticketId}`} replace className={buttonVariants({ ancho: 'completo' })}>
@@ -219,7 +260,6 @@ export function Pago() {
   }
 
   /* ---------------------------------------------------------------- formulario / procesando */
-  const marca = marcaDe(numero)
   return (
     <Pantalla className="pb-0">
       <header className="flex items-center gap-3 px-5">
@@ -234,10 +274,8 @@ export function Pago() {
         {enProceso ? (
           <section role="status" aria-live="polite" className="flex flex-col items-center gap-3 rounded-tarjeta bg-tinta px-5 py-8 text-center text-white">
             <LiveDot className="size-3" />
-            <span className="font-display text-[20px] font-bold">Confirmando con tu banco…</span>
-            <span className="text-[14px] text-tinta-texto-2">
-              No cierres esta pantalla. Si el intento se repite, cobramos una sola vez.
-            </span>
+            <span className="font-display text-[20px] font-bold">{espera.titulo}</span>
+            <span className="text-[14px] text-tinta-texto-2">{espera.detalle}</span>
           </section>
         ) : (
           <form
@@ -247,73 +285,37 @@ export function Pago() {
             }}
             noValidate
           >
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 text-[15px] font-semibold">
-                <CreditCard className="size-5" aria-hidden="true" />
-                Tarjeta de crédito o débito
-              </span>
-              {numero && <span className="text-[13px] font-semibold text-texto-2">{NOMBRE_MARCA[marca]}</span>}
-            </div>
-            <Campo
-              etiqueta="Número de tarjeta"
-              inputMode="numeric"
-              autoComplete="cc-number"
-              enterKeyHint="next"
-              placeholder="1234 5678 9012 3456"
-              value={numero}
-              onChange={(e) => {
-                setNumero(formatearNumero(e.target.value))
-                setErrores((x) => ({ ...x, numero: undefined }))
-              }}
-              error={errores.numero}
-              className="num"
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <Campo
-                etiqueta="Vence"
-                inputMode="numeric"
-                autoComplete="cc-exp"
-                enterKeyHint="next"
-                placeholder="MM/AA"
-                value={vence}
-                onChange={(e) => {
-                  setVence(formatearVence(e.target.value))
-                  setErrores((x) => ({ ...x, vence: undefined }))
+            <SelectorMetodo valor={metodo} alCambiar={setMetodo} />
+            {metodo === 'TARJETA' && (
+              <FormTarjeta
+                datos={tarjeta}
+                errores={errores}
+                alCambiar={(parcial) => {
+                  setTarjeta((t) => ({ ...t, ...parcial }))
+                  setErrores((x) => ({ ...x, ...Object.fromEntries(Object.keys(parcial).map((k) => [k, undefined])) }))
                 }}
-                error={errores.vence}
-                className="num"
               />
-              <Campo
-                etiqueta="CVC"
-                inputMode="numeric"
-                autoComplete="cc-csc"
-                enterKeyHint="done"
-                placeholder={marca === 'amex' ? '1234' : '123'}
-                value={cvc}
-                onChange={(e) => {
-                  setCvc(soloDigitos(e.target.value).slice(0, 4))
-                  setErrores((x) => ({ ...x, cvc: undefined }))
+            )}
+            {metodo === 'PSE' && (
+              <FormPse
+                datos={pse}
+                errores={erroresPse}
+                alCambiar={(parcial) => {
+                  setPse((x) => ({ ...x, ...parcial }))
+                  setErroresPse({})
                 }}
-                error={errores.cvc}
-                className="num"
               />
-            </div>
-            <p className="flex items-start gap-2 text-[13px] leading-snug text-texto-2">
-              <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              El número no sale de tu teléfono: solo enviamos un código de la pasarela y los últimos 4 dígitos.
-            </p>
-            <details className="text-[13px] text-texto-2">
-              <summary className="cursor-pointer font-semibold">Tarjetas de prueba (sandbox)</summary>
-              <ul className="mt-1.5 flex flex-col gap-1">
-                <li>
-                  <span className="num">4242 4242 4242 4242</span>: aprobada
-                </li>
-                <li>
-                  <span className="num">4000 0000 0000 0002</span>: rechazada por fondos
-                </li>
-                <li>Cualquier fecha futura y CVC de 3 dígitos.</li>
-              </ul>
-            </details>
+            )}
+            {metodo === 'NEQUI' && (
+              <FormNequi
+                telefono={telefono}
+                error={errorTelefono}
+                alCambiar={(t) => {
+                  setTelefono(t)
+                  setErrorTelefono(undefined)
+                }}
+              />
+            )}
           </form>
         )}
       </div>

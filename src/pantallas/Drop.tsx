@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Hoja } from '@/components/ui/hoja'
 import { Campo } from '@/components/ui/input'
 import { ultimoViajero } from '@/features/retenciones'
-import { useSegundosRestantes } from '@/hooks/useAhora'
+import { useAhora, useSegundosRestantes } from '@/hooks/useAhora'
 import { ApiError, textoError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
 import { dinero, fechaCorta, horaCorta, reloj } from '@/lib/formato'
@@ -21,10 +21,13 @@ import { useSesion } from '@/lib/sesion'
 import { topicos, useIntervaloRespaldo, useTopico } from '@/lib/tiempoReal'
 import type { CupoOferta, Oferta } from '@/lib/tipos'
 import { cn } from '@/lib/utils'
+import { SalaEspera } from './drop/SalaEspera'
+import { useSala } from './drop/useSala'
 
 /**
- * Pantalla 08. Drop: oferta relámpago (US-056 / US-058). Cupo y tiempo en vivo; "Apartar uno"
- * pasa por el contador atómico del backend: nunca se vende más que el cupo.
+ * Pantalla 08. Drop: oferta relámpago (US-056 / US-058). Cupo, tiempo y "N personas viendo" en vivo
+ * (oferta:{id}:cupo, US-163); con sala de espera (US-162) primero se hace la fila. "Apartar uno" pasa por el
+ * contador atómico del backend: nunca se vende más que el cupo.
  */
 export function Drop() {
   const { offerId = '' } = useParams()
@@ -37,6 +40,8 @@ export function Drop() {
   const [doc, setDoc] = useState(() => ultimoViajero()?.numeroDocumento ?? '')
   const [errorDoc, setErrorDoc] = useState<string>()
   const [agotadoEnVivo, setAgotadoEnVivo] = useState(false)
+  const [personas, setPersonas] = useState<number | null>(null)
+  const ahora = useAhora()
 
   const oferta = useQuery({ queryKey: ['oferta', offerId], queryFn: () => api.ofertas.obtener(offerId), refetchInterval: respaldo })
   const o = oferta.data
@@ -47,7 +52,18 @@ export function Drop() {
   })
   useAcento(detalle.data?.destino)
 
+  const { abierta: filaAbierta, sala } = useSala(o, !!s, ahora)
+
   useTopico(topicos.cupoOferta(offerId), (m) => {
+    if (m.type === 'event' && m.event === 'OfferViewers') {
+      const n = Number((m.data as { personas?: unknown } | null)?.personas)
+      if (Number.isFinite(n)) setPersonas(n)
+      return
+    }
+    if (m.type === 'event' && m.event === 'OfferQueueUpdated') {
+      void sala.refetch()
+      return
+    }
     const c = m.data as Partial<CupoOferta> | null
     if (c && typeof c.cupoRestante === 'number') {
       queryClient.setQueryData<Oferta>(['oferta', offerId], (prev) =>
@@ -95,6 +111,9 @@ export function Drop() {
   const agotada = o.estado === 'AGOTADA' || o.cupoRestante <= 0 || agotadoEnVivo
   const porEmpezar = o.estado === 'PROGRAMADA' || o.estado === 'BORRADOR'
   const activa = o.estado === 'ACTIVA' && !terminada && !agotada
+  const conFila = !!o.salaEsperaHabilitada
+  const puedeComprar = activa && (!conFila || sala.data?.estado === 'ADMITIDO')
+  const irAEntrar = () => void navigate(`/entrar?siguiente=${encodeURIComponent(pathname)}`)
   const descuento = d ? Math.round((1 - o.precioOferta / d.precioBase) * 100) : null
   const vendidos = Math.max(0, o.cupoMax - o.cupoRestante)
 
@@ -165,6 +184,13 @@ export function Drop() {
           </span>
           <span className="text-[13px] text-texto-2">{vendidos === 1 ? '1 apartado' : `${vendidos} apartados`}</span>
         </div>
+        <div className="-mt-2 mb-3 flex justify-end">
+          {personas != null && personas > 0 && (
+            <span role="status" className="text-[13px] font-semibold text-texto-2">
+              {personas === 1 ? '1 persona viendo' : `${personas.toLocaleString('es-CO')} personas viendo`}
+            </span>
+          )}
+        </div>
         <div aria-hidden="true" className="grid grid-cols-10 gap-1.5">
           {Array.from({ length: Math.min(o.cupoMax, 40) }, (_, i) => (
             <span
@@ -181,19 +207,22 @@ export function Drop() {
       <div className="flex-1" />
 
       <div className="flex flex-col gap-2.5 px-5 pt-4">
-        {activa ? (
+        {conFila && (activa || porEmpezar) && (
+          <SalaEspera o={o} abierta={filaAbierta} sala={sala.data} conSesion={!!s} alPedirSesion={irAEntrar} />
+        )}
+        {puedeComprar ? (
           <>
             <Button variante="naranja" ancho="completo" disabled={apartar.isPending} onClick={pedir}>
               {apartar.isPending ? 'Apartando…' : s ? 'Apartar uno' : 'Entra para apartar uno'}
             </Button>
             <span className="text-center text-[13px] text-texto-2">Uno por persona y documento. Si se agota mientras pagas, no te cobramos.</span>
           </>
-        ) : agotada ? (
+        ) : activa ? null : agotada ? (
           <Aviso tono="alerta">
             <span className="font-semibold">Se agotó en vivo.</span> Hubo más personas que puestos. Puedes comprar este viaje a precio normal.
           </Aviso>
         ) : porEmpezar ? (
-          <Aviso>Este drop empieza a las {horaCorta(o.inicio)}. Quédate en esta pantalla: se abre solo.</Aviso>
+          !conFila && <Aviso>Este drop empieza a las {horaCorta(o.inicio)}. Quédate en esta pantalla: se abre solo.</Aviso>
         ) : (
           <Aviso>Este drop ya terminó.</Aviso>
         )}

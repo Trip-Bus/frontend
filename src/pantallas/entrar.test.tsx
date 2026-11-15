@@ -31,6 +31,9 @@ const auth = {
   rol: 'PASAJERO',
 }
 
+/** La pantalla también consulta GET /auth/providers: se busca cada llamada por su ruta. */
+const llamada = (fetchMock: ReturnType<typeof vi.fn>, ruta: string) => fetchMock.mock.calls.find(([u]) => String(u).endsWith(ruta))
+
 describe('inicio de sesión y registro', () => {
   it('inicia sesión y solo acepta destinos internos', async () => {
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
@@ -45,7 +48,7 @@ describe('inicio de sesión y registro', () => {
     fireEvent.click(submit)
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/inicio'))
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+    expect(JSON.parse(String(llamada(fetchMock, '/auth/login')?.[1]?.body))).toEqual({
       email: 'ana@example.com',
       password: 'pass',
     })
@@ -72,7 +75,7 @@ describe('inicio de sesión y registro', () => {
     fireEvent.click(verificar)
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/inicio'))
-    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({
+    expect(JSON.parse(String(llamada(fetchMock, '/auth/2fa')?.[1]?.body))).toEqual({
       mfaToken: 'mfa-token',
       recoveryCode: 'backup-code',
     })
@@ -101,7 +104,7 @@ describe('inicio de sesión y registro', () => {
     fireEvent.click(crear)
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/inicio'))
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+    expect(JSON.parse(String(llamada(fetchMock, '/auth/register')?.[1]?.body))).toMatchObject({
       nombre: 'Ana Pérez',
       email: 'ana@example.com',
       documentoIdentidad: '123456',

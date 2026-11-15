@@ -37,6 +37,10 @@ export function Asientos() {
   const s = useSesion()
   const queryClient = useQueryClient()
   const maximo = Math.min(6, Math.max(1, Number(params.get('pasajeros')) || 1))
+  // US-142: tramo intermedio elegido en la búsqueda.
+  const desde = Number(params.get('desde')) || undefined
+  const hasta = Number(params.get('hasta')) || undefined
+  const tramo = desde && hasta ? { fromOrden: desde, toOrden: hasta } : {}
 
   const [elegidos, setElegidos] = useState<string[]>([])
   const [pisoActivo, setPisoActivo] = useState(0)
@@ -47,10 +51,10 @@ export function Asientos() {
   useAcento(detalle.data?.destino)
   const mapa = useQuery({ queryKey: ['mapa', itineraryId], queryFn: () => api.catalogo.mapa(itineraryId), staleTime: Infinity })
   const respaldo = useIntervaloRespaldo()
-  const claveEstados = ['asientos', itineraryId, s?.userId ?? 'anonimo']
+  const claveEstados = ['asientos', itineraryId, s?.userId ?? 'anonimo', desde ?? null, hasta ?? null]
   const estados = useQuery({
     queryKey: claveEstados,
-    queryFn: () => api.asientos.estados(itineraryId),
+    queryFn: () => api.asientos.estados(itineraryId, desde && hasta ? { from: desde, to: hasta } : {}),
     refetchInterval: respaldo,
   })
 
@@ -80,7 +84,7 @@ export function Asientos() {
   const pisos = useMemo(() => (mapa.data ? construirPisos(mapa.data, estados.data, mios) : []), [mapa.data, estados.data, mios])
 
   const apartar = useMutation({
-    mutationFn: (asientos: string[]) => api.asientos.retener(itineraryId, asientos),
+    mutationFn: (asientos: string[]) => api.asientos.retener(itineraryId, asientos, tramo),
     onSuccess: (r) => {
       recordarRetencion(r)
       void queryClient.invalidateQueries({ queryKey: claveEstados })
@@ -197,6 +201,8 @@ export function Asientos() {
         </div>
       )}
 
+      {!cancelado && !previa && estados.data && estados.data.resumen.disponibles === 0 && <ListaEspera itineraryId={itineraryId} cantidad={maximo} />}
+
       {previa && (
         <section className="mx-5 mt-3 flex items-center gap-3 rounded-[18px] bg-tinta p-3 pl-4 text-white">
           <div className="flex min-w-0 flex-1 flex-col">
@@ -304,5 +310,28 @@ export function Asientos() {
         </div>
       </Hoja>
     </Pantalla>
+  )
+}
+
+/** P-09: bus lleno: anotarse en la lista de espera (US-140). Si alguien suelta un puesto, se lo guardamos 10 min. */
+function ListaEspera({ itineraryId, cantidad }: { itineraryId: string; cantidad: number }) {
+  const navigate = useNavigate()
+  const s = useSesion()
+  const anotarse = useMutation({
+    mutationFn: () => api.asientos.anotarseEnEspera(itineraryId, cantidad),
+    onSuccess: () => {
+      toast('Te anotamos. Si se libera un puesto te lo guardamos 10 minutos.')
+      void navigate('/mis-turnos')
+    },
+    onError: (e) => toast(textoError(e)),
+  })
+  return (
+    <section aria-label="Lista de espera" className="mx-5 mt-3 flex flex-col gap-2 rounded-[18px] bg-tinta p-4 text-white">
+      <span className="font-semibold">Este bus está lleno</span>
+      <span className="text-[13px] text-tinta-texto-2">Anótate en la lista de espera: si alguien suelta un puesto te lo apartamos y te avisamos.</span>
+      <Button variante="acento" tamano="md" disabled={anotarse.isPending} onClick={() => (s ? anotarse.mutate() : void navigate('/entrar'))}>
+        {anotarse.isPending ? 'Anotando…' : s ? `Anotarme por ${plural(cantidad, 'puesto', 'puestos')}` : 'Entra para anotarte'}
+      </Button>
+    </section>
   )
 }

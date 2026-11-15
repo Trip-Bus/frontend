@@ -47,9 +47,11 @@ type OpcionesBase = {
   /** Para operaciones de dinero (POST /bookings/{id}/pay): misma clave = un solo cobro. */
   idempotencyKey?: string
   signal?: AbortSignal
+  /** Accept de una descarga (por defecto CSV). */
+  formato?: string
 }
 
-type Opciones = OpcionesBase & { responseType?: 'json' | 'blob' }
+type Opciones = OpcionesBase & { responseType?: 'json' | 'blob' | 'total' }
 
 export async function solicitar<T>(metodo: string, ruta: string, opciones: OpcionesBase = {}): Promise<T> {
   return ejecutar<T>(metodo, ruta, opciones, true)
@@ -59,9 +61,14 @@ export function solicitarBlob(metodo: string, ruta: string, opciones: OpcionesBa
   return ejecutar<Blob>(metodo, ruta, { ...opciones, responseType: 'blob' }, true)
 }
 
+/** Listado que informa el total en el encabezado X-Total-Count (GET /trips/search, T-05). */
+export function solicitarConTotal<T>(metodo: string, ruta: string, opciones: OpcionesBase = {}): Promise<{ datos: T; total: number | null }> {
+  return ejecutar<{ datos: T; total: number | null }>(metodo, ruta, { ...opciones, responseType: 'total' }, true)
+}
+
 async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, permitirRenovacion: boolean): Promise<T> {
-  const { auth = 'opcional', body, query, responseType = 'json', idempotencyKey, signal } = opciones
-  const headers: Record<string, string> = { Accept: responseType === 'blob' ? 'text/csv' : 'application/json' }
+  const { auth = 'opcional', body, query, responseType = 'json', idempotencyKey, signal, formato = 'text/csv' } = opciones
+  const headers: Record<string, string> = { Accept: responseType === 'blob' ? formato : 'application/json' }
 
   const token = auth === 'ninguno' ? null : sesion.token()
   if (auth === 'requerido' && !token) {
@@ -84,7 +91,7 @@ async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, per
     throw new ApiError(0, 'SIN_CONEXION', 'No hay conexión. Revisa tu señal e intenta de nuevo.')
   }
 
-  if (respuesta.status === 204) return undefined as T
+  if (respuesta.status === 204) return (responseType === 'total' ? { datos: null, total: null } : undefined) as T
 
   if (!respuesta.ok) {
     const texto = await respuesta.text()
@@ -124,6 +131,10 @@ async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, per
   if (responseType === 'blob') return (await respuesta.blob()) as T
   const texto = await respuesta.text()
   const datos = texto ? intentarJson(texto) : null
+  if (responseType === 'total') {
+    const total = Number(respuesta.headers.get('X-Total-Count'))
+    return { datos, total: respuesta.headers.has('X-Total-Count') && Number.isFinite(total) ? total : null } as T
+  }
   return datos as T
 }
 
@@ -288,6 +299,74 @@ const MENSAJES: Record<string, string> = {
   TOO_MANY_REQUESTS: 'Ya pediste varios correos. Espera un rato antes de pedir otro.',
   EMAIL_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
   DOCUMENTO_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
+  GOOGLE_TOKEN_INVALID: 'Google no confirmó tu cuenta. Pulsa el botón de Google otra vez.',
+  GOOGLE_LOGIN_DISABLED: 'El ingreso con Google no está disponible en este momento.',
+  GOOGLE_ACCOUNT_CONFLICT: 'Ese correo ya está vinculado a otra cuenta de Google.',
+  GOOGLE_UNAVAILABLE: 'Google no responde. Intenta en unos minutos o entra con tu correo.',
+  PRICING_UNAVAILABLE: 'No pudimos calcular el precio. Intenta de nuevo en unos segundos.',
+  COUPON_NOT_FOUND: 'Ese cupón no existe o ya no está activo.',
+  COUPON_NOT_COMBINABLE: 'Los cupones no aplican a precios de oferta.',
+  COUPON_NOT_YET_VALID: 'Ese cupón todavía no está vigente.',
+  COUPON_EXPIRED: 'Ese cupón ya venció.',
+  COUPON_NOT_APPLICABLE: 'Ese cupón no aplica a este viaje.',
+  COUPON_MINIMUM_NOT_MET: 'La compra no alcanza el mínimo del cupón.',
+  COUPON_EXHAUSTED: 'Ese cupón ya no tiene usos disponibles.',
+  COUPON_USER_LIMIT_REACHED: 'Ya usaste este cupón el máximo de veces.',
+  RESEND_LIMIT_REACHED: 'Ya reenviaste este tiquete 3 veces hoy. Intenta mañana.',
+  TICKET_NOT_RESENDABLE: 'Este tiquete ya no se puede reenviar.',
+  NO_CONTACT_EMAIL: 'La reserva no tiene un correo para enviar el tiquete.',
+  MAIL_UNAVAILABLE: 'El correo no está disponible ahora. Descarga el PDF.',
+  RECEIPT_NOT_AVAILABLE: 'El comprobante estará listo cuando se apruebe el pago.',
+  RESCHEDULE_WINDOW_CLOSED: 'Solo puedes reprogramar hasta 3 horas antes de la salida.',
+  RESCHEDULE_LIMIT_REACHED: 'Este tiquete ya se reprogramó el máximo de 2 veces.',
+  RESCHEDULE_IN_PROGRESS: 'Ya tienes una reprogramación en curso de esta reserva.',
+  BOOKING_NOT_RESCHEDULABLE: 'Esta reserva no se puede reprogramar.',
+  TICKET_NOT_RESCHEDULABLE: 'Este tiquete no se puede reprogramar.',
+  OFFER_FARE_NOT_RESCHEDULABLE: 'Los tiquetes de esta oferta no se pueden reprogramar.',
+  NO_SHOW_WINDOW_CLOSED: 'Pasaron más de 24 horas desde la salida: ya no se puede reprogramar.',
+  ROUTE_MISMATCH: 'El viaje nuevo debe tener el mismo origen y destino.',
+  SAME_ITINERARY: 'Elige un viaje distinto al que ya tienes.',
+  SEATS_PASSENGERS_MISMATCH: 'Elige un puesto por cada pasajero.',
+  SEAT_CHANGE_WINDOW_CLOSED: 'El puesto se puede cambiar hasta 30 minutos antes de la salida.',
+  PASSENGER_CHANGE_WINDOW_CLOSED: 'Los datos se pueden corregir hasta 1 hora antes de la salida.',
+  PASSENGER_ALREADY_CORRECTED: 'Los datos de este pasajero ya se corrigieron una vez.',
+  ALREADY_DECIDED: 'Ya elegiste qué hacer con este viaje.',
+  DECISION_WINDOW_CLOSED: 'El plazo para elegir terminó y aplicamos la opción automática.',
+  OPTION_NOT_AVAILABLE: 'Esa opción no está disponible para este viaje.',
+  BOOKING_NOT_AFFECTED: 'El reembolso solo aplica a viajes afectados por la empresa.',
+  QUEUE_NOT_OPEN: 'La fila abre 10 minutos antes de que empiece la oferta.',
+  QUEUE_NOT_ENABLED: 'Esta oferta no tiene sala de espera.',
+  QUEUE_CLOSED: 'La fila de esta oferta ya cerró.',
+  QUEUE_TURN_REQUIRED: 'Espera tu turno en la fila para comprar.',
+  DOCUMENT_DAILY_LIMIT: 'Ese documento ya tiene el máximo de ofertas de hoy.',
+  SEATS_CONFLICT: 'Hay puestos vendidos que no existen en el bus nuevo.',
+  BUS_SCHEDULE_CONFLICT: 'El bus ya tiene otro viaje a esa hora.',
+  BUS_NOT_ACTIVE: 'Ese bus no está activo.',
+  DEPARTURE_IN_PAST: 'La salida debe ser en el futuro.',
+  SAME_DEPARTURE: 'Esa ya es la hora de salida.',
+  SAME_BUS: 'Ese ya es el bus del viaje.',
+  ITINERARY_ALREADY_DEPARTED: 'El viaje ya salió.',
+  ITINERARY_DEPARTED: 'El viaje ya salió.',
+  PLACA_ALREADY_EXISTS: 'Ya hay un bus con esa placa.',
+  BUS_IN_USE: 'El bus tiene viajes programados: no se puede cambiar su mapa.',
+  ROUTE_IN_USE: 'La ruta tiene viajes programados: no se puede cambiar.',
+  NIT_ALREADY_EXISTS: 'Ya hay una empresa con ese NIT.',
+  TERMINAL_IN_USE: 'La terminal es parada de alguna ruta.',
+  TERMINAL_ALREADY_EXISTS: 'Ya hay una terminal con ese nombre en la ciudad.',
+  CANNOT_SUSPEND_SELF: 'No puedes suspender tu propia cuenta.',
+  SHARE_LINK_NOT_FOUND: 'Este enlace venció o no existe.',
+  TRIP_NOT_FINISHED: 'El recorrido estará disponible cuando termine el viaje.',
+  NO_ETA: 'Todavía no hay hora estimada de llegada.',
+  ALERT_ALREADY_RESOLVED: 'Esa alerta ya estaba resuelta.',
+  TRIP_NOT_STARTED: 'El viaje todavía no ha empezado.',
+  TRIP_ALREADY_FINISHED: 'El viaje ya terminó.',
+  WAITLIST_CLOSED: 'La lista de espera de este viaje ya cerró.',
+  ALREADY_IN_WAITLIST: 'Ya estás en la lista de espera de este viaje.',
+  SEATS_AVAILABLE: 'Hay puestos libres: puedes comprar ahora.',
+  WAITLIST_NOT_FOUND: 'Ya no estabas en la lista de espera.',
+  PUSH_DISABLED: 'Las notificaciones no están disponibles en este momento.',
+  INVALID_SUBSCRIPTION: 'El navegador no entregó una suscripción válida.',
+  FOLLOW_LIMIT_REACHED: 'Puedes seguir hasta 10 rutas.',
 }
 
 export function mensajeAmigable(e: ApiError): string {

@@ -1,18 +1,51 @@
-import * as React from "react"
-import { cn } from "cn"
+import { useId, type InputHTMLAttributes, type ReactNode } from 'react'
+import { cn } from '@/lib/utils'
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
-  return (
-    <input
-      type={type}
-      data-slot="input"
-      className={cn(
-        "h-11 w-full min-w-0 rounded-md border border-borde bg-superficie px-3 text-cuerpo text-monte transition-colors outline-offset-2 file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-pequeno file:font-medium file:text-monte placeholder:text-texto-suave hover:border-borde-fuerte focus-visible:border-verde-andino focus-visible:outline-2 focus-visible:outline-foco disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-error",
-        className
-      )}
-      {...props}
-    />
-  )
+type CampoProps = InputHTMLAttributes<HTMLInputElement> & {
+  etiqueta: ReactNode
+  error?: string
+  ayuda?: ReactNode
+  /** Botón dentro del campo, a la derecha (p. ej. mostrar la contraseña). */
+  accion?: ReactNode
 }
 
-export { Input }
+/**
+ * Campo con etiqueta real (accesible) y mensaje de error asociado.
+ * Siempre 16 px: en iOS un campo más pequeño hace zoom a la página y no vuelve.
+ * Usa `inputMode`, `autoComplete` y `enterKeyHint` para que salga el teclado correcto.
+ */
+export function Campo({ etiqueta, error, ayuda, accion, className, id, ...props }: CampoProps) {
+  const autoId = useId()
+  const inputId = id ?? autoId
+  const errorId = `${inputId}-error`
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={inputId} className="text-[13px] font-semibold">
+        {etiqueta}
+      </label>
+      <div className="relative">
+        <input
+          id={inputId}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          className={cn(
+            'h-13 w-full rounded-control border-[1.5px] border-control bg-superficie px-3.5 text-base text-tinta',
+            'placeholder:text-libre-borde focus-visible:outline-2 focus-visible:outline-tinta',
+            error && 'border-presencia-borde',
+            accion != null && 'pr-14',
+            className,
+          )}
+          {...props}
+        />
+        {accion != null && <div className="absolute inset-y-0 right-1 flex items-center">{accion}</div>}
+      </div>
+      {error ? (
+        <span id={errorId} role="alert" className="text-[13px] font-medium text-presencia-borde">
+          {error}
+        </span>
+      ) : ayuda ? (
+        <span className="text-[13px] text-texto-2">{ayuda}</span>
+      ) : null}
+    </div>
+  )
+}

@@ -96,11 +96,11 @@ export function Pago() {
     mutationFn: (b: Reserva) => api.asientos.retener(b.itineraryId, b.seatNumbers),
     onSuccess: (h) => {
       recordarRetencion(h)
-      navigate(`/reserva/${h.holdId}`, { replace: true })
+      void navigate(`/reserva/${h.holdId}`, { replace: true })
     },
     onError: (e, b) => {
       toast(textoError(e))
-      navigate(`/viaje/${b.itineraryId}/asientos`)
+      void navigate(`/viaje/${b.itineraryId}/asientos`)
     },
   })
 

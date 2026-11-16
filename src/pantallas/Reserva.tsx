@@ -87,7 +87,7 @@ export function Reserva() {
     mutationFn: (lista: PasajeroRequest[]) => api.reservas.crear(holdId, lista, cupon.trim()),
     onSuccess: (reserva, lista) => {
       recordarViajero({ ...lista[0], tipoPasajero: undefined })
-      navigate(`/pago/${reserva.bookingId}`, { replace: true })
+      void navigate(`/pago/${reserva.bookingId}`, { replace: true })
     },
     onError: (e) => {
       if (e instanceof ApiError && e.code.startsWith('COUPON_')) {
@@ -112,7 +112,7 @@ export function Reserva() {
     mutationFn: () => api.asientos.liberar(holdId),
     onSettled: () => {
       olvidarRetencion(holdId)
-      navigate(r ? `/viaje/${r.itineraryId}/asientos` : '/inicio', { replace: true })
+      void navigate(r ? `/viaje/${r.itineraryId}/asientos` : '/inicio', { replace: true })
     },
   })
 
@@ -120,11 +120,11 @@ export function Reserva() {
     mutationFn: () => api.asientos.retener(r!.itineraryId, r!.seatNumbers),
     onSuccess: (nueva) => {
       recordarRetencion(nueva)
-      navigate(`/reserva/${nueva.holdId}`, { replace: true })
+      void navigate(`/reserva/${nueva.holdId}`, { replace: true })
     },
     onError: (e) => {
       toast(textoError(e))
-      navigate(`/viaje/${r!.itineraryId}/asientos`)
+      void navigate(`/viaje/${r!.itineraryId}/asientos`)
     },
   })
 

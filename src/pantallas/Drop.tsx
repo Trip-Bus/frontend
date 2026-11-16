@@ -79,7 +79,7 @@ export function Drop() {
     mutationFn: (docId: string) => api.ofertas.apartar(offerId, docId),
     onSuccess: (r) => {
       setPidiendoDoc(false)
-      navigate(`/reserva/${r.holdId}`)
+      void navigate(`/reserva/${r.holdId}`)
     },
     onError: (e) => {
       setPidiendoDoc(false)
@@ -89,7 +89,7 @@ export function Drop() {
         return
       }
       if (e instanceof ApiError && e.status === 401) {
-        navigate(`/entrar?siguiente=${encodeURIComponent(pathname)}`)
+        void navigate(`/entrar?siguiente=${encodeURIComponent(pathname)}`)
         return
       }
       toast(textoError(e))
@@ -119,7 +119,7 @@ export function Drop() {
 
   const pedir = () => {
     if (!s) {
-      navigate(`/entrar?siguiente=${encodeURIComponent(pathname)}`)
+      void navigate(`/entrar?siguiente=${encodeURIComponent(pathname)}`)
       return
     }
     setPidiendoDoc(true)

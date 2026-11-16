@@ -121,7 +121,7 @@ function CrearUsuario({ abierto, alCerrar, empresas }: { abierto: boolean; alCer
     },
     onError: (e) => toast(textoError(e)),
   })
-  const listo = datos.nombre.trim().length >= 3 && /.+@.+\..+/.test(datos.email) && datos.documentoIdentidad.trim().length >= 4 && !!datos.companyId
+  const listo = datos.nombre.trim().length >= 3 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(datos.email) && datos.documentoIdentidad.trim().length >= 4 && !!datos.companyId
   const enviar = (e: FormEvent) => {
     e.preventDefault()
     if (listo) crear.mutate()

@@ -88,7 +88,7 @@ export function Asientos() {
     onSuccess: (r) => {
       recordarRetencion(r)
       void queryClient.invalidateQueries({ queryKey: claveEstados })
-      navigate(`/reserva/${r.holdId}`)
+      void navigate(`/reserva/${r.holdId}`)
     },
     onError: (e, asientos) => {
       void queryClient.invalidateQueries({ queryKey: claveEstados })
@@ -98,7 +98,7 @@ export function Asientos() {
         return
       }
       if (e instanceof ApiError && e.status === 401) {
-        navigate(`/entrar?siguiente=${encodeURIComponent(pathname + search)}`)
+        void navigate(`/entrar?siguiente=${encodeURIComponent(pathname + search)}`)
         return
       }
       toast(textoError(e))
@@ -143,7 +143,7 @@ export function Asientos() {
 
   const tocar = (p: Puesto) => {
     if (p.estado === 'oferta' && p.offerId) {
-      navigate(`/drop/${p.offerId}`)
+      void navigate(`/drop/${p.offerId}`)
       return
     }
     setElegidos(() => {
@@ -156,7 +156,7 @@ export function Asientos() {
 
   const continuar = () => {
     if (!s) {
-      navigate(`/entrar?siguiente=${encodeURIComponent(pathname + search)}`)
+      void navigate(`/entrar?siguiente=${encodeURIComponent(pathname + search)}`)
       return
     }
     apartar.mutate(vigentes)

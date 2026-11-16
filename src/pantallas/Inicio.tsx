@@ -59,7 +59,7 @@ export function Inicio() {
   const cambiar = (parcial: Partial<Busqueda>) => setBusqueda((b) => ({ ...b, ...parcial }))
   const buscar = () => {
     recordarBusqueda(busqueda)
-    navigate(`/salidas?${aParametros(busqueda)}`)
+    void navigate(`/salidas?${aParametros(busqueda)}`)
   }
 
   const destinos = [

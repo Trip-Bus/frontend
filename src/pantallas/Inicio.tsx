@@ -6,7 +6,9 @@ import { aParametros, busquedaInicial, hoy, recordarBusqueda, type Busqueda } fr
 import { tamanoTitulo, veloFoto, visualDe } from '@/features/ciudadVisual'
 import { useAcento } from '@/hooks/useAcento'
 import { useAhora } from '@/hooks/useAhora'
+import { BannerAfectados } from '@/components/marca/BannerAfectados'
 import { BarraInferior } from '@/components/marca/BarraInferior'
+import { CampanaAvisos } from '@/components/marca/CampanaAvisos'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
 import { Hoja } from '@/components/ui/hoja'
@@ -57,7 +59,7 @@ export function Inicio() {
   const cambiar = (parcial: Partial<Busqueda>) => setBusqueda((b) => ({ ...b, ...parcial }))
   const buscar = () => {
     recordarBusqueda(busqueda)
-    navigate(`/salidas?${aParametros(busqueda)}`)
+    void navigate(`/salidas?${aParametros(busqueda)}`)
   }
 
   const destinos = [
@@ -89,9 +91,12 @@ export function Inicio() {
       <header className="pt-seguro relative flex items-center justify-between px-5 [text-shadow:0_1px_14px_rgba(13,20,17,.45)]">
         <span className="font-display text-[22px] font-extrabold tracking-[-0.02em]">tripbus</span>
         {s ? (
+          <span className="flex items-center gap-2">
+          <CampanaAvisos className={cn('size-10 rounded-full text-white', vidrio)} />
           <Link to="/cuenta" aria-label={usuario.data?.nombre ? `Tu cuenta, ${usuario.data.nombre}` : 'Tu cuenta'} className={cn('tap flex size-10 items-center justify-center rounded-full text-[14px] font-bold', vidrio)}>
             {iniciales(usuario.data?.nombre)}
           </Link>
+          </span>
         ) : (
           <Link to="/entrar?siguiente=/inicio" className={cn('tap flex h-10 items-center rounded-full px-4 text-[15px] font-semibold', vidrio)}>
             Entrar
@@ -112,7 +117,12 @@ export function Inicio() {
       <div className="min-h-8 flex-1" />
 
       <section aria-label="Buscar viaje" className="relative flex flex-col gap-3 px-4">
+        <BannerAfectados oscuro />
         <DropActivo />
+        <Link to="/ofertas" className={cn('tap flex h-10 items-center justify-center gap-2 self-start rounded-full px-4 text-[14px] font-semibold', vidrio)}>
+          <Zap className="size-4 text-naranja" aria-hidden="true" />
+          Ofertas de las próximas 48 h
+        </Link>
         <div ref={carril} role="radiogroup" aria-label="Destino" className="carril -mx-4 gap-2 px-4">
           {destinos.map((c) => {
             const on = c === busqueda.destino

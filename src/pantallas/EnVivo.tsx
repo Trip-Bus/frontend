@@ -1,8 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Flag, MapPin, Play, Route as IconoRuta, Share2 } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Construction, Flag, MapPin, Play, Route as IconoRuta, Share2, Siren, Wrench } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router'
 import { toast } from 'sonner'
+import { compartirEnlace, useCompartirViaje } from '@/hooks/useCompartirViaje'
+import { useSesion } from '@/lib/sesion'
 import { useAcento } from '@/hooks/useAcento'
 import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Esqueleto, PantallaError } from '@/components/marca/Estados'
@@ -14,7 +16,8 @@ import { useAhora } from '@/hooks/useAhora'
 import { api } from '@/lib/endpoints'
 import { fechaCorta, horaCorta } from '@/lib/formato'
 import { topicos, useIntervaloRespaldo, useTopico } from '@/lib/tiempoReal'
-import type { Novedad, Posicion, Seguimiento, TipoNovedad } from '@/lib/tipos'
+import type { EstadoRastreo, Eta, Novedad, Posicion, Seguimiento, TipoNovedad } from '@/lib/tipos'
+import { Puntualidad } from './envivo/Puntualidad'
 import { cn } from '@/lib/utils'
 
 const ANCHO = 390
@@ -26,18 +29,38 @@ const NOVEDAD: Record<TipoNovedad, { texto: string; icono: typeof Flag }> = {
   RETRASO: { texto: 'Retraso', icono: AlertTriangle },
   DESVIO: { texto: 'Desvío', icono: IconoRuta },
   FIN: { texto: 'Llegó al destino', icono: Flag },
+  AVERIA: { texto: 'Avería', icono: Wrench },
+  ACCIDENTE: { texto: 'Accidente', icono: Siren },
+  VIA_CERRADA: { texto: 'Vía cerrada', icono: Construction },
+  REPROGRAMACION: { texto: 'Cambio de horario', icono: CalendarClock },
+}
+
+/** Novedades que se resaltan en rojo y se anuncian al llegar. */
+const GRAVES = new Set<TipoNovedad>(['RETRASO', 'DESVIO', 'AVERIA', 'ACCIDENTE', 'VIA_CERRADA', 'REPROGRAMACION'])
+
+const RASTREO: Record<EstadoRastreo, string> = {
+  ACTIVO: 'En vivo',
+  EN_PAUSA: 'Rastreo en pausa',
+  SIN_SENAL: 'Sin señal',
+  FINALIZADO: 'Viaje terminado',
 }
 
 const sumarMin = (iso: string, min: number) => new Date(new Date(iso).getTime() + min * 60_000).toISOString()
 
 /**
- * Pantalla 07. Viaje en vivo (US-039 / US-047). Pública: sirve para quien espera el bus en la vía.
- * Posición por WebSocket (bus:{id}:posicion) y novedades (viaje:{id}:eventos); si el canal no está,
- * se consulta por REST cada 5 s.
+ * Pantalla 07. Viaje en vivo (US-039 / US-047, P-12). Pública: sirve para quien espera el bus en la vía.
+ * Posición, estado del rastreo y ETA por WebSocket (viaje:{id}:posicion) y novedades (viaje:{id}:eventos);
+ * si el canal no está, se consulta por REST cada 5 s. Al terminar muestra el recorrido y la puntualidad.
  */
 export function EnVivo() {
   const { itineraryId = '' } = useParams()
+  return <VistaEnVivo itineraryId={itineraryId} />
+}
+
+export function VistaEnVivo({ itineraryId, compartido = false }: { itineraryId: string; compartido?: boolean }) {
   const queryClient = useQueryClient()
+  const sesionActual = useSesion()
+  const compartirViaje = useCompartirViaje()
   const ahora = useAhora()
   const respaldo = useIntervaloRespaldo()
   const [verTodo, setVerTodo] = useState(false)
@@ -54,12 +77,38 @@ export function EnVivo() {
   })
   const s = seguimiento.data
   useAcento(s?.destino)
+  const terminado = s?.estado === 'FINALIZADO' || s?.estadoRastreo === 'FINALIZADO'
+  const eta = useQuery({
+    queryKey: ['eta', itineraryId],
+    queryFn: () => api.viaje.eta(itineraryId),
+    enabled: !!s && !terminado && s.estado !== 'CANCELADO' && !!s.posicion,
+    refetchInterval: respaldo * 2,
+    retry: false,
+  })
+  const recorridoFinal = useQuery({ queryKey: ['recorrido', itineraryId], queryFn: () => api.viaje.recorrido(itineraryId), enabled: terminado, retry: false })
 
-  useTopico(s ? topicos.posicionBus(s.busId) : null, (m) => {
-    const p = m.data as Posicion | null
-    if (!p || typeof p.lat !== 'number') return
+  const actualizar = (parcial: Partial<Seguimiento>) =>
+    queryClient.setQueryData<Seguimiento>(['seguimiento', itineraryId], (prev) => (prev ? { ...prev, ...parcial } : prev))
+
+  useTopico(topicos.posicionViaje(itineraryId), (m) => {
+    const datos = (m.data ?? {}) as Record<string, unknown>
+    if (m.type === 'snapshot') {
+      if (typeof datos.itineraryId === 'string') actualizar(datos as Partial<Seguimiento>)
+      return
+    }
+    if (m.event === 'EtaUpdated') {
+      queryClient.setQueryData<Eta>(['eta', itineraryId], datos as Eta)
+      return
+    }
+    if (m.event === 'TrackingStatusChanged') {
+      const estado = (datos.estado ?? datos.estadoRastreo) as EstadoRastreo | undefined
+      if (estado) actualizar({ estadoRastreo: estado, ...(typeof datos.ultimaPosicionEn === 'string' ? { ultimaPosicionEn: datos.ultimaPosicionEn } : {}) })
+      return
+    }
+    const p = (datos.posicion ?? datos) as Posicion
+    if (typeof p.lat !== 'number' || (p.itineraryId && p.itineraryId !== itineraryId)) return
     queryClient.setQueryData<Seguimiento>(['seguimiento', itineraryId], (prev) =>
-      prev && (!p.itineraryId || p.itineraryId === itineraryId) ? { ...prev, posicion: { ...p, busId: prev.busId } } : prev,
+      prev ? { ...prev, posicion: { ...p, busId: prev.busId }, ultimaPosicionEn: p.timestamp } : prev,
     )
   })
   useTopico(topicos.novedades(itineraryId), (m) => {
@@ -69,7 +118,7 @@ export function EnVivo() {
     }
     if (m.type === 'event') {
       const n = m.data as Novedad
-      if (n?.tipo === 'RETRASO' || n?.tipo === 'DESVIO') toast(`${NOVEDAD[n.tipo].texto}: ${n.descripcion ?? 'el conductor reportó una novedad'}`)
+      if (n?.tipo && GRAVES.has(n.tipo)) toast(`${NOVEDAD[n.tipo].texto}: ${n.descripcion ?? 'el conductor reportó una novedad'}`)
       void queryClient.invalidateQueries({ queryKey: ['novedades', itineraryId] })
       void queryClient.invalidateQueries({ queryKey: ['seguimiento', itineraryId] })
     }
@@ -89,15 +138,19 @@ export function EnVivo() {
   }
 
   const lista = [...(novedades.data ?? [])].sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-  const retraso = minutosDeRetraso(lista)
+  const etaActual = eta.data ?? s.eta ?? null
+  const retraso = etaActual ? Math.max(0, Math.round(etaActual.retrasoMinutos)) : minutosDeRetraso(lista)
+  const estimadaDe = (orden: number) => etaActual?.paradas.find((x) => x.orden === orden)?.estimada
   const llegada = sumarMin(s.llegadaProgramada, retraso)
   const avance = calcularAvance(s.paradas, s.posicion)
   const hace = segundosDesde(s.posicion, ahora)
-  const enRuta = s.estado === 'EN_RUTA' || s.estado === 'SIN_SENAL'
-  const sinSenal = s.estado === 'SIN_SENAL' || (hace != null && hace > 120)
+  const rastreando = s.estadoRastreo === 'ACTIVO' || s.estadoRastreo === 'SIN_SENAL' || s.estadoRastreo === 'EN_PAUSA'
+  const enRuta = s.estado === 'EN_RUTA' || s.estado === 'SIN_SENAL' || rastreando
+  const sinSenal = s.estadoRastreo === 'SIN_SENAL' || s.estado === 'SIN_SENAL' || (hace != null && hace > 120)
+  const pausado = s.estadoRastreo === 'EN_PAUSA'
   // El bus se muestra en ruta y también antes de salir si ya transmite (camino a la terminal).
   const conSenalReciente = hace != null && hace < 300
-  const mostrarBus = s.estado !== 'CANCELADO' && s.estado !== 'FINALIZADO' && (enRuta || conSenalReciente)
+  const mostrarBus = s.estado !== 'CANCELADO' && !terminado && (enRuta || conSenalReciente)
 
   const puntos = s.paradas.map(proyeccion)
   const bus = s.posicion ? proyeccion(s.posicion) : null
@@ -107,26 +160,25 @@ export function EnVivo() {
   const titulo =
     s.estado === 'CANCELADO'
       ? 'Este viaje fue cancelado'
-      : s.estado === 'FINALIZADO'
+      : terminado
         ? `Llegó a ${s.destino}`
         : enRuta
           ? `Llegas a ${s.destino}`
           : `Sale de ${s.origen}`
   const horaTitulo = s.estado === 'PROGRAMADO' ? s.fechaSalida : llegada
 
-  const compartir = async () => {
-    const url = globalThis.location?.href ?? ''
-    const texto = `Sigue en vivo el bus de ${s.origen} a ${s.destino}:`
-    try {
-      if (navigator.share) await navigator.share({ title: 'Viaje en vivo', text: texto, url })
-      else {
-        await navigator.clipboard.writeText(`${texto} ${url}`)
-        toast('Enlace copiado.')
-      }
-    } catch {
-      /* menú cerrado */
+  // Con cuenta se crea un enlace /compartido/{codigo} que vence; sin cuenta se comparte esta misma pantalla.
+  const compartir = () => {
+    if (sesionActual && !compartido) {
+      compartirViaje.mutate(itineraryId)
+      return
     }
+    void compartirEnlace(globalThis.location?.href ?? '', 'Viaje en vivo', `Sigue en vivo el bus de ${s.origen} a ${s.destino}:`)
   }
+  const ultimaSenal = s.ultimaPosicionEn ?? s.posicion?.timestamp ?? null
+  let textoRastreo: string | null = s.estadoRastreo ? RASTREO[s.estadoRastreo] : null
+  if (s.estadoRastreo === 'SIN_SENAL' && ultimaSenal) textoRastreo = `Sin señal desde las ${horaCorta(ultimaSenal)}`
+  if (s.estadoRastreo === 'ACTIVO' && hace != null) textoRastreo = `En vivo · hace ${haceCuanto(hace)}`
 
   return (
     <Pantalla aSangre>
@@ -180,14 +232,16 @@ export function EnVivo() {
         <div className="pt-seguro absolute inset-x-0 top-0 flex items-start justify-between px-5">
           <BotonVolver />
           <span role="status" className="flex h-9 items-center gap-2 rounded-full bg-tinta px-3.5 text-[13px] font-semibold text-white">
-            {mostrarBus && !sinSenal ? <LiveDot /> : <span aria-hidden="true" className="size-2 rounded-full bg-control" />}
-            {mostrarBus
+            {mostrarBus && !sinSenal && !pausado ? <LiveDot /> : <span aria-hidden="true" className="size-2 rounded-full bg-control" />}
+            {textoRastreo && !terminado && s.estado !== 'CANCELADO'
+              ? textoRastreo
+              : mostrarBus
               ? sinSenal
                 ? `Sin señal hace ${haceCuanto(hace ?? 0)}`
                 : `En vivo · hace ${haceCuanto(hace ?? 0)}`
               : s.estado === 'PROGRAMADO'
                 ? 'Aún no sale'
-                : s.estado === 'FINALIZADO'
+                : terminado
                   ? 'Viaje terminado'
                   : 'Cancelado'}
           </span>
@@ -200,7 +254,7 @@ export function EnVivo() {
             <span className="text-[14px] text-texto-2">{titulo}</span>
             {s.estado !== 'CANCELADO' && <span className="num text-[40px] leading-none font-bold">{horaCorta(horaTitulo)}</span>}
           </div>
-          {s.estado !== 'CANCELADO' && s.estado !== 'FINALIZADO' && (
+          {s.estado !== 'CANCELADO' && !terminado && (
             <span
               className={cn(
                 'mt-1 flex h-8 shrink-0 items-center rounded-full px-3 text-[13px] font-bold',
@@ -224,7 +278,8 @@ export function EnVivo() {
 
         <ol aria-label="Paradas" className="flex flex-col">
           {s.paradas.map((p, i) => {
-            const pasada = avance ? i <= avance.ultimaParada : s.estado === 'FINALIZADO'
+            const alcanzada = etaActual?.paradas.find((x) => x.orden === p.orden)?.alcanzada
+            const pasada = alcanzada ?? (avance ? i <= avance.ultimaParada : terminado)
             const aqui = enRuta && avance?.ultimaParada === i
             return (
               <li key={p.orden} className="flex items-center gap-3">
@@ -237,7 +292,9 @@ export function EnVivo() {
                   <span className={cn('truncate text-[15px]', i === 0 || i === s.paradas.length - 1 ? 'font-semibold' : '')}>{p.nombre}</span>
                   {aqui && <span className="shrink-0 rounded-md bg-acento px-1.5 text-[11px] font-bold">Va por aquí</span>}
                 </span>
-                <span className="num shrink-0 text-[14px] text-texto-2">{horaCorta(sumarMin(p.horaProgramada, pasada ? 0 : retraso))}</span>
+                <span className="num shrink-0 text-[14px] text-texto-2">
+                  {pasada ? horaCorta(p.horaProgramada) : horaCorta(estimadaDe(p.orden) ?? sumarMin(p.horaProgramada, retraso))}
+                </span>
               </li>
             )
           })}
@@ -249,7 +306,7 @@ export function EnVivo() {
             <ul className="flex flex-col gap-2">
               {(verTodo ? lista : lista.slice(0, 3)).map((n) => {
                 const { texto, icono: Icono } = NOVEDAD[n.tipo] ?? NOVEDAD.RETRASO
-                const alerta = n.tipo === 'RETRASO' || n.tipo === 'DESVIO'
+                const alerta = GRAVES.has(n.tipo)
                 return (
                   <li key={n.tripEventId} className={cn('flex gap-3 rounded-[18px] p-3', alerta ? 'bg-presencia' : 'bg-fondo')}>
                     <Icono className={cn('mt-0.5 size-5 shrink-0', alerta && 'text-alerta')} aria-hidden="true" />
@@ -271,10 +328,12 @@ export function EnVivo() {
           </section>
         )}
 
+        {terminado && <Puntualidad consulta={recorridoFinal} />}
+
         <div className="flex-1" />
-        <Button variante="contorno" ancho="completo" onClick={compartir}>
+        <Button variante="contorno" ancho="completo" disabled={compartirViaje.isPending} onClick={compartir}>
           <Share2 className="size-5" aria-hidden="true" />
-          Compartir el viaje
+          {compartirViaje.isPending ? 'Creando el enlace…' : 'Compartir mi viaje'}
         </Button>
       </section>
     </Pantalla>

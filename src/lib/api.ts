@@ -1,15 +1,21 @@
 import { sesion } from './sesion'
-import type { ErrorApi } from './tipos'
+import type { ErrorApi, RenovacionTokensResponse } from './tipos'
 
 /**
  * Cliente HTTP contra el API Gateway.
  *
- * El navegador siempre llama a `/api/...` en su mismo origen:
+ * El navegador siempre llama a `/api/v1/...` en su mismo origen:
  *  - en desarrollo, Vite hace de proxy al gateway (vite.config.ts);
  *  - en producción, el NGINX del contenedor del frontend (nginx/default.conf.template).
  * Así no hay CORS. Para apuntar a otro lugar, define VITE_API_URL.
  */
-export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api'
+export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api/v1'
+
+export const EVENTO_SESION_EXPIRADA = 'tripbus:sesion-expirada'
+export const EVENTO_CUENTA_SUSPENDIDA = 'tripbus:cuenta-suspendida'
+export const EVENTO_CUENTA_BLOQUEADA = 'tripbus:cuenta-bloqueada'
+
+let renovacionEnCurso: Promise<boolean> | null = null
 
 export class ApiError extends Error {
   readonly status: number
@@ -33,7 +39,7 @@ export class ApiError extends Error {
   }
 }
 
-type Opciones = {
+type OpcionesBase = {
   /** 'requerido': falla si no hay sesión. 'opcional': manda el token si existe. 'ninguno': nunca. */
   auth?: 'requerido' | 'opcional' | 'ninguno'
   body?: unknown
@@ -41,11 +47,28 @@ type Opciones = {
   /** Para operaciones de dinero (POST /bookings/{id}/pay): misma clave = un solo cobro. */
   idempotencyKey?: string
   signal?: AbortSignal
+  /** Accept de una descarga (por defecto CSV). */
+  formato?: string
 }
 
-export async function solicitar<T>(metodo: string, ruta: string, opciones: Opciones = {}): Promise<T> {
-  const { auth = 'opcional', body, query, idempotencyKey, signal } = opciones
-  const headers: Record<string, string> = { Accept: 'application/json' }
+type Opciones = OpcionesBase & { responseType?: 'json' | 'blob' | 'total' }
+
+export async function solicitar<T>(metodo: string, ruta: string, opciones: OpcionesBase = {}): Promise<T> {
+  return ejecutar<T>(metodo, ruta, opciones, true)
+}
+
+export function solicitarBlob(metodo: string, ruta: string, opciones: OpcionesBase = {}): Promise<Blob> {
+  return ejecutar<Blob>(metodo, ruta, { ...opciones, responseType: 'blob' }, true)
+}
+
+/** Listado que informa el total en el encabezado X-Total-Count (GET /trips/search, T-05). */
+export function solicitarConTotal<T>(metodo: string, ruta: string, opciones: OpcionesBase = {}): Promise<{ datos: T; total: number | null }> {
+  return ejecutar<{ datos: T; total: number | null }>(metodo, ruta, { ...opciones, responseType: 'total' }, true)
+}
+
+async function ejecutar<T>(metodo: string, ruta: string, opciones: Opciones, permitirRenovacion: boolean): Promise<T> {
+  const { auth = 'opcional', body, query, responseType = 'json', idempotencyKey, signal, formato = 'text/csv' } = opciones
+  const headers: Record<string, string> = { Accept: responseType === 'blob' ? formato : 'application/json' }
 
   const token = auth === 'ninguno' ? null : sesion.token()
   if (auth === 'requerido' && !token) {
@@ -68,12 +91,11 @@ export async function solicitar<T>(metodo: string, ruta: string, opciones: Opcio
     throw new ApiError(0, 'SIN_CONEXION', 'No hay conexión. Revisa tu señal e intenta de nuevo.')
   }
 
-  if (respuesta.status === 204) return undefined as T
-
-  const texto = await respuesta.text()
-  const datos = texto ? intentarJson(texto) : null
+  if (respuesta.status === 204) return (responseType === 'total' ? { datos: null, total: null } : undefined) as T
 
   if (!respuesta.ok) {
+    const texto = await respuesta.text()
+    const datos = texto ? intentarJson(texto) : null
     const err = (datos as ErrorApi | null)?.error
     const retry = Number(respuesta.headers.get('Retry-After'))
     const apiError = new ApiError(
@@ -83,12 +105,117 @@ export async function solicitar<T>(metodo: string, ruta: string, opciones: Opcio
       err?.details ?? {},
       Number.isFinite(retry) && retry > 0 ? retry : null,
     )
-    // Token vencido o revocado: se cierra la sesión local para pedir login de nuevo.
-    if (respuesta.status === 401 && token) sesion.cerrar()
+    if (respuesta.status === 401 && token) {
+      const tokenActual = sesion.token()
+      if (permitirRenovacion && tokenActual && tokenActual !== token) {
+        return ejecutar<T>(metodo, ruta, opciones, false)
+      }
+      if (permitirRenovacion && sesion.refreshToken()) {
+        if (await renovarSesion()) return ejecutar<T>(metodo, ruta, opciones, false)
+        throw apiError
+      }
+      if (permitirRenovacion) cerrarSesionExpirada()
+    }
+    if (respuesta.status === 403 && apiError.code === 'ACCOUNT_SUSPENDED') {
+      sesion.cerrar()
+      emitir(EVENTO_CUENTA_SUSPENDIDA)
+    }
+    if (respuesta.status === 423 && apiError.code === 'ACCOUNT_LOCKED') {
+      emitir(EVENTO_CUENTA_BLOQUEADA, { reintentarEn: apiError.reintentarEn })
+    }
+    // US-106: el rol exige la verificación en dos pasos y aún no está activa: la app lleva a activarla.
+    if (respuesta.status === 403 && apiError.code === 'MFA_SETUP_REQUIRED') avisarMfaObligatoria()
     throw apiError
   }
 
+  if (responseType === 'blob') return (await respuesta.blob()) as T
+  const texto = await respuesta.text()
+  const datos = texto ? intentarJson(texto) : null
+  if (responseType === 'total') {
+    const total = Number(respuesta.headers.get('X-Total-Count'))
+    return { datos, total: respuesta.headers.has('X-Total-Count') && Number.isFinite(total) ? total : null } as T
+  }
   return datos as T
+}
+
+function emitir<T>(tipo: string, detalle?: T) {
+  const evento = detalle === undefined ? new Event(tipo) : new CustomEvent(tipo, { detail: detalle })
+  globalThis.dispatchEvent?.(evento)
+}
+
+function cerrarSesionExpirada() {
+  sesion.cerrar()
+  emitir(EVENTO_SESION_EXPIRADA)
+}
+
+function renovarSesion(): Promise<boolean> {
+  if (renovacionEnCurso) return renovacionEnCurso
+  const refreshToken = sesion.refreshToken()
+  if (!refreshToken) return Promise.resolve(false)
+
+  renovacionEnCurso = (async () => {
+    let respuesta: Response
+    try {
+      respuesta = await fetch(API_BASE + '/auth/refresh', {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e
+      throw new ApiError(0, 'SIN_CONEXION', 'No hay conexión. Revisa tu señal e intenta de nuevo.')
+    }
+
+    const texto = await respuesta.text()
+    const datos = texto ? intentarJson(texto) : null
+    if (!respuesta.ok) {
+      const err = (datos as ErrorApi | null)?.error
+      const retry = Number(respuesta.headers.get('Retry-After'))
+      const error = new ApiError(
+        respuesta.status,
+        err?.code ?? `HTTP_${respuesta.status}`,
+        err?.message ?? 'No pudimos renovar tu sesión.',
+        err?.details ?? {},
+        Number.isFinite(retry) && retry > 0 ? retry : null,
+      )
+      if (respuesta.status === 401 && ['REFRESH_TOKEN_REUSED', 'INVALID_REFRESH_TOKEN'].includes(error.code)) {
+        cerrarSesionExpirada()
+        return false
+      }
+      if (respuesta.status === 403 && error.code === 'ACCOUNT_SUSPENDED') {
+        sesion.cerrar()
+        emitir(EVENTO_CUENTA_SUSPENDIDA)
+        return false
+      }
+      if (respuesta.status === 423 && error.code === 'ACCOUNT_LOCKED') {
+        emitir(EVENTO_CUENTA_BLOQUEADA, { reintentarEn: error.reintentarEn })
+      }
+      throw error
+    }
+
+    const tokens = datos as RenovacionTokensResponse | null
+    if (
+      !tokens ||
+      typeof tokens.accessToken !== 'string' ||
+      typeof tokens.expiresAt !== 'string' ||
+      !Number.isFinite(new Date(tokens.expiresAt).getTime())
+    ) {
+      throw new ApiError(502, 'INVALID_REFRESH_RESPONSE', 'El servidor no devolvió una sesión válida.')
+    }
+    sesion.actualizarTokens(tokens)
+    return true
+  })().finally(() => {
+    renovacionEnCurso = null
+  })
+
+  return renovacionEnCurso
+}
+
+/** Evento global: la app (main.tsx) lleva a /cuenta/seguridad cuando la 2FA es obligatoria. */
+export const EVENTO_MFA_OBLIGATORIA = 'tripbus:mfa-obligatoria'
+
+function avisarMfaObligatoria() {
+  emitir(EVENTO_MFA_OBLIGATORIA)
 }
 
 export function construirQuery(query?: Opciones['query']): string {
@@ -160,8 +287,86 @@ const MENSAJES: Record<string, string> = {
   ITINERARY_NOT_FOUND: 'Ese viaje no existe.',
   ITINERARY_ALREADY_CANCELLED: 'Ese viaje ya estaba cancelado.',
   SEAT_MAP_NOT_FOUND: 'Este bus todavía no tiene mapa de puestos.',
+  ACCOUNT_LOCKED: 'Demasiados intentos fallidos. Tu cuenta quedó bloqueada unos minutos; intenta más tarde.',
+  INVALID_MFA_CODE: 'El código no coincide o ya venció. Revisa la app e intenta con el código nuevo.',
+  MFA_TOKEN_INVALID: 'El inicio de sesión venció. Escribe tu correo y contraseña de nuevo.',
+  MFA_SETUP_REQUIRED: 'Tu rol exige la verificación en dos pasos. Actívala para seguir.',
+  MFA_ALREADY_ENABLED: 'La verificación en dos pasos ya está activa.',
+  MFA_NOT_SET_UP: 'Primero escanea el código QR con tu app de autenticación.',
+  MFA_NOT_ENABLED: 'La verificación en dos pasos no está activa.',
+  INVALID_CURRENT_PASSWORD: 'La contraseña no es correcta.',
+  LAST_ADMIN: 'Eres el único administrador activo: no puedes eliminar tu cuenta.',
+  TOO_MANY_REQUESTS: 'Ya pediste varios correos. Espera un rato antes de pedir otro.',
   EMAIL_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
   DOCUMENTO_ALREADY_REGISTERED: 'No pudimos crear la cuenta con esos datos. ¿Ya tienes una? Inicia sesión.',
+  GOOGLE_TOKEN_INVALID: 'Google no confirmó tu cuenta. Pulsa el botón de Google otra vez.',
+  GOOGLE_LOGIN_DISABLED: 'El ingreso con Google no está disponible en este momento.',
+  GOOGLE_ACCOUNT_CONFLICT: 'Ese correo ya está vinculado a otra cuenta de Google.',
+  GOOGLE_UNAVAILABLE: 'Google no responde. Intenta en unos minutos o entra con tu correo.',
+  PRICING_UNAVAILABLE: 'No pudimos calcular el precio. Intenta de nuevo en unos segundos.',
+  COUPON_NOT_FOUND: 'Ese cupón no existe o ya no está activo.',
+  COUPON_NOT_COMBINABLE: 'Los cupones no aplican a precios de oferta.',
+  COUPON_NOT_YET_VALID: 'Ese cupón todavía no está vigente.',
+  COUPON_EXPIRED: 'Ese cupón ya venció.',
+  COUPON_NOT_APPLICABLE: 'Ese cupón no aplica a este viaje.',
+  COUPON_MINIMUM_NOT_MET: 'La compra no alcanza el mínimo del cupón.',
+  COUPON_EXHAUSTED: 'Ese cupón ya no tiene usos disponibles.',
+  COUPON_USER_LIMIT_REACHED: 'Ya usaste este cupón el máximo de veces.',
+  RESEND_LIMIT_REACHED: 'Ya reenviaste este tiquete 3 veces hoy. Intenta mañana.',
+  TICKET_NOT_RESENDABLE: 'Este tiquete ya no se puede reenviar.',
+  NO_CONTACT_EMAIL: 'La reserva no tiene un correo para enviar el tiquete.',
+  MAIL_UNAVAILABLE: 'El correo no está disponible ahora. Descarga el PDF.',
+  RECEIPT_NOT_AVAILABLE: 'El comprobante estará listo cuando se apruebe el pago.',
+  RESCHEDULE_WINDOW_CLOSED: 'Solo puedes reprogramar hasta 3 horas antes de la salida.',
+  RESCHEDULE_LIMIT_REACHED: 'Este tiquete ya se reprogramó el máximo de 2 veces.',
+  RESCHEDULE_IN_PROGRESS: 'Ya tienes una reprogramación en curso de esta reserva.',
+  BOOKING_NOT_RESCHEDULABLE: 'Esta reserva no se puede reprogramar.',
+  TICKET_NOT_RESCHEDULABLE: 'Este tiquete no se puede reprogramar.',
+  OFFER_FARE_NOT_RESCHEDULABLE: 'Los tiquetes de esta oferta no se pueden reprogramar.',
+  NO_SHOW_WINDOW_CLOSED: 'Pasaron más de 24 horas desde la salida: ya no se puede reprogramar.',
+  ROUTE_MISMATCH: 'El viaje nuevo debe tener el mismo origen y destino.',
+  SAME_ITINERARY: 'Elige un viaje distinto al que ya tienes.',
+  SEATS_PASSENGERS_MISMATCH: 'Elige un puesto por cada pasajero.',
+  SEAT_CHANGE_WINDOW_CLOSED: 'El puesto se puede cambiar hasta 30 minutos antes de la salida.',
+  PASSENGER_CHANGE_WINDOW_CLOSED: 'Los datos se pueden corregir hasta 1 hora antes de la salida.',
+  PASSENGER_ALREADY_CORRECTED: 'Los datos de este pasajero ya se corrigieron una vez.',
+  ALREADY_DECIDED: 'Ya elegiste qué hacer con este viaje.',
+  DECISION_WINDOW_CLOSED: 'El plazo para elegir terminó y aplicamos la opción automática.',
+  OPTION_NOT_AVAILABLE: 'Esa opción no está disponible para este viaje.',
+  BOOKING_NOT_AFFECTED: 'El reembolso solo aplica a viajes afectados por la empresa.',
+  QUEUE_NOT_OPEN: 'La fila abre 10 minutos antes de que empiece la oferta.',
+  QUEUE_NOT_ENABLED: 'Esta oferta no tiene sala de espera.',
+  QUEUE_CLOSED: 'La fila de esta oferta ya cerró.',
+  QUEUE_TURN_REQUIRED: 'Espera tu turno en la fila para comprar.',
+  DOCUMENT_DAILY_LIMIT: 'Ese documento ya tiene el máximo de ofertas de hoy.',
+  SEATS_CONFLICT: 'Hay puestos vendidos que no existen en el bus nuevo.',
+  BUS_SCHEDULE_CONFLICT: 'El bus ya tiene otro viaje a esa hora.',
+  BUS_NOT_ACTIVE: 'Ese bus no está activo.',
+  DEPARTURE_IN_PAST: 'La salida debe ser en el futuro.',
+  SAME_DEPARTURE: 'Esa ya es la hora de salida.',
+  SAME_BUS: 'Ese ya es el bus del viaje.',
+  ITINERARY_ALREADY_DEPARTED: 'El viaje ya salió.',
+  ITINERARY_DEPARTED: 'El viaje ya salió.',
+  PLACA_ALREADY_EXISTS: 'Ya hay un bus con esa placa.',
+  BUS_IN_USE: 'El bus tiene viajes programados: no se puede cambiar su mapa.',
+  ROUTE_IN_USE: 'La ruta tiene viajes programados: no se puede cambiar.',
+  NIT_ALREADY_EXISTS: 'Ya hay una empresa con ese NIT.',
+  TERMINAL_IN_USE: 'La terminal es parada de alguna ruta.',
+  TERMINAL_ALREADY_EXISTS: 'Ya hay una terminal con ese nombre en la ciudad.',
+  CANNOT_SUSPEND_SELF: 'No puedes suspender tu propia cuenta.',
+  SHARE_LINK_NOT_FOUND: 'Este enlace venció o no existe.',
+  TRIP_NOT_FINISHED: 'El recorrido estará disponible cuando termine el viaje.',
+  NO_ETA: 'Todavía no hay hora estimada de llegada.',
+  ALERT_ALREADY_RESOLVED: 'Esa alerta ya estaba resuelta.',
+  TRIP_NOT_STARTED: 'El viaje todavía no ha empezado.',
+  TRIP_ALREADY_FINISHED: 'El viaje ya terminó.',
+  WAITLIST_CLOSED: 'La lista de espera de este viaje ya cerró.',
+  ALREADY_IN_WAITLIST: 'Ya estás en la lista de espera de este viaje.',
+  SEATS_AVAILABLE: 'Hay puestos libres: puedes comprar ahora.',
+  WAITLIST_NOT_FOUND: 'Ya no estabas en la lista de espera.',
+  PUSH_DISABLED: 'Las notificaciones no están disponibles en este momento.',
+  INVALID_SUBSCRIPTION: 'El navegador no entregó una suscripción válida.',
+  FOLLOW_LIMIT_REACHED: 'Puedes seguir hasta 10 rutas.',
 }
 
 export function mensajeAmigable(e: ApiError): string {

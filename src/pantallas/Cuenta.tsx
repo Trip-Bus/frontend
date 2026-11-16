@@ -1,12 +1,14 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ChevronRight, LayoutGrid, LogOut, QrCode, Ticket } from 'lucide-react'
+import { Bell, Briefcase, Clock, ChevronRight, LayoutGrid, LogOut, QrCode, Route, ShieldCheck, Ticket, UserRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router'
+import { ActivarAvisos } from '@/components/marca/ActivarAvisos'
 import { BarraInferior } from '@/components/marca/BarraInferior'
 import { Aviso, Esqueleto } from '@/components/marca/Estados'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
 import { Hoja } from '@/components/ui/hoja'
+import { toast } from 'sonner'
 import { useAcento } from '@/hooks/useAcento'
 import { textoError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
@@ -21,7 +23,10 @@ const ROL_TEXTO: Record<Rol, string> = {
   ADMIN: 'Administrador',
 }
 
-/** Tu cuenta: tus datos (Identity, GET /users/{id}), atajos y cerrar sesión. */
+/**
+ * Tu cuenta: tu perfil (Identity, GET /users/me), si el correo está verificado (US-130), atajos a tus datos
+ * (US-128, US-131) y a la seguridad (US-129, US-106), y cerrar sesión.
+ */
 export function Cuenta() {
   useAcento(null)
   const s = useSesion()
@@ -29,10 +34,15 @@ export function Cuenta() {
   const [confirmar, setConfirmar] = useState(false)
 
   const usuario = useQuery({
-    queryKey: ['usuario', s?.userId],
-    queryFn: () => api.auth.usuario(s!.userId),
+    queryKey: ['perfil', s?.userId],
+    queryFn: api.cuenta.perfil,
     enabled: !!s,
     staleTime: 5 * 60_000,
+  })
+  const reenviar = useMutation({
+    mutationFn: api.auth.reenviarVerificacion,
+    onSuccess: () => toast('Te enviamos el enlace. Revisa tu correo (vence en 24 horas).'),
+    onError: (e) => toast(textoError(e)),
   })
   // Misma consulta (y caché) que "Mis tiquetes".
   const reservas = useQuery({ queryKey: ['reservas'], queryFn: api.reservas.mias, enabled: !!s, staleTime: 30_000 })
@@ -44,7 +54,7 @@ export function Cuenta() {
     onSettled: () => {
       sesion.cerrar()
       setConfirmar(false)
-      navigate('/', { replace: true })
+      void navigate('/', { replace: true })
     },
   })
 
@@ -65,19 +75,34 @@ export function Cuenta() {
         ) : usuario.isError ? (
           <Aviso tono="alerta">{textoError(usuario.error, 'No pudimos cargar tus datos.')}</Aviso>
         ) : (
-          <section aria-label="Tus datos" className="flex items-center gap-4 rounded-tarjeta bg-tinta p-5 text-white">
-            <span aria-hidden="true" className="flex size-16 shrink-0 items-center justify-center rounded-full bg-acento text-[22px] font-bold text-tinta">
-              {iniciales(u?.nombre)}
-            </span>
-            <div className="flex min-w-0 flex-col gap-1">
-              <span className="truncate text-[20px] font-semibold" title={u?.nombre}>
-                {u?.nombre}
+          <section aria-label="Tus datos" className="flex flex-col gap-4 rounded-tarjeta bg-tinta p-5 text-white">
+            <div className="flex items-center gap-4">
+              <span aria-hidden="true" className="flex size-16 shrink-0 items-center justify-center rounded-full bg-acento text-[22px] font-bold text-tinta">
+                {iniciales(u?.nombre)}
               </span>
-              <span className="truncate text-[14px] text-tinta-texto-2" title={u?.email}>
-                {u?.email}
-              </span>
-              <span className="mt-1 w-fit rounded-full border border-white/25 px-2.5 py-0.5 text-[12px] font-semibold">{ROL_TEXTO[rol]}</span>
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="truncate text-[20px] font-semibold" title={u?.nombre}>
+                  {u?.nombre}
+                </span>
+                <span className="truncate text-[14px] text-tinta-texto-2" title={u?.email}>
+                  {u?.email}
+                </span>
+                <span className="mt-1 w-fit rounded-full border border-white/25 px-2.5 py-0.5 text-[12px] font-semibold">{ROL_TEXTO[rol]}</span>
+              </div>
             </div>
+            {u && !u.emailVerificado && (
+              <div className="flex items-center justify-between gap-3 rounded-[16px] bg-white/10 px-3.5 py-2.5">
+                <span className="text-[14px] leading-snug">Tu correo aún no está verificado.</span>
+                <button
+                  type="button"
+                  disabled={reenviar.isPending || reenviar.isSuccess}
+                  onClick={() => reenviar.mutate()}
+                  className="tap shrink-0 rounded-xl bg-acento px-3 py-2 text-[14px] font-semibold text-tinta disabled:opacity-60"
+                >
+                  {reenviar.isSuccess ? 'Enviado' : reenviar.isPending ? 'Enviando…' : 'Reenviar enlace'}
+                </button>
+              </div>
+            )}
           </section>
         )}
 
@@ -88,6 +113,23 @@ export function Cuenta() {
             titulo="Mis tiquetes"
             detalle={reservas.isSuccess ? (confirmadas ? plural(confirmadas, 'tiquete comprado', 'tiquetes comprados') : 'Aún no has comprado') : undefined}
           />
+          <Fila a="/cuenta/datos" icono={<UserRound className="size-5" aria-hidden="true" />} titulo="Tus datos" detalle="Nombre, teléfono, descargar o eliminar" />
+          <Fila
+            a="/cuenta/seguridad"
+            icono={<ShieldCheck className="size-5" aria-hidden="true" />}
+            titulo="Seguridad"
+            detalle={rol === 'ADMIN' || rol === 'OPERADOR' ? 'Contraseña y verificación en dos pasos' : 'Cambiar tu contraseña'}
+          />
+          {rol === 'PASAJERO' && (
+            <>
+              <Fila a="/avisos" icono={<Bell className="size-5" aria-hidden="true" />} titulo="Avisos" detalle="Cambios de tus viajes, reembolsos y ofertas" />
+              <Fila a="/mis-turnos" icono={<Clock className="size-5" aria-hidden="true" />} titulo="Mis turnos" detalle="Listas de espera de buses llenos" />
+              <Fila a="/cuenta/alertas" icono={<Route className="size-5" aria-hidden="true" />} titulo="Rutas que sigues" detalle="Te avisamos cuando salga una oferta" />
+            </>
+          )}
+          {(rol === 'OPERADOR' || rol === 'ADMIN') && (
+            <Fila a={rol === 'ADMIN' ? '/admin' : '/operador'} icono={<Briefcase className="size-5" aria-hidden="true" />} titulo={rol === 'ADMIN' ? 'Administración' : 'Gestión de la empresa'} detalle="Viajes, flota, ofertas y reportes" />
+          )}
           {equipo && (
             <>
               <Fila a="/panel" icono={<LayoutGrid className="size-5" aria-hidden="true" />} titulo="Panel de la empresa" detalle="Viajes, novedades y drops" />
@@ -96,7 +138,7 @@ export function Cuenta() {
           )}
         </nav>
 
-        {u && !u.activo && <Aviso tono="alerta">Tu cuenta está desactivada. Escríbenos para revisarla.</Aviso>}
+        <ActivarAvisos />
 
         <Button variante="contorno" ancho="completo" onClick={() => setConfirmar(true)}>
           <LogOut className="size-5" aria-hidden="true" />

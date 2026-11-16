@@ -11,19 +11,23 @@ export function Pantalla({
   className,
   oscura = false,
   aSangre = false,
+  amplia = false,
 }: {
   children: ReactNode
   className?: string
   oscura?: boolean
   /** Foto o franja hasta el borde superior e inferior: la pantalla pone sus propios márgenes seguros. */
   aSangre?: boolean
+  /** Pantallas de gestión (operador y admin): en escritorio usan más ancho; en el celular se ven igual. */
+  amplia?: boolean
 }) {
   return (
     <div className={cn('min-h-dvh w-full', oscura ? 'bg-tinta' : 'bg-fondo')}>
       <main
         className={cn(
           !aSangre && 'pt-seguro pb-seguro',
-          'mx-auto flex min-h-dvh w-full max-w-[480px] flex-col',
+          'mx-auto flex min-h-dvh w-full flex-col',
+          amplia ? 'max-w-[1080px]' : 'max-w-[480px]',
           oscura ? 'bg-tinta text-white' : 'bg-fondo text-tinta',
           className,
         )}

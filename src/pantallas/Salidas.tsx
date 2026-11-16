@@ -1,12 +1,19 @@
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { ArrowLeftRight, SlidersHorizontal } from 'lucide-react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router'
-import { useState } from 'react'
-import { aParametros, desdeParametros, hoy, type Busqueda } from '@/features/busqueda'
+import { useState, type FormEvent } from 'react'
+import { aParametros, cuantosFiltros, desdeParametros, hoy, rutaAsientos, type Busqueda, type Filtros } from '@/features/busqueda'
 import { BotonVolver } from '@/components/marca/BotonVolver'
+import { CampoLugar } from '@/components/marca/CampoLugar'
+import { CargarMas } from '@/components/marca/Consulta'
+import { IconosServicios } from '@/components/marca/IconosServicios'
 import { tamanoTitulo, visualDe } from '@/features/ciudadVisual'
 import { useAcento } from '@/hooks/useAcento'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { Button } from '@/components/ui/button'
+import { Casilla, Segmentos } from '@/components/ui/campos'
+import { Hoja } from '@/components/ui/hoja'
+import { Campo } from '@/components/ui/input'
 import { ApiError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
 import {
@@ -22,102 +29,250 @@ import {
 } from '@/lib/formato'
 import type { ResultadoViaje } from '@/lib/tipos'
 import { cn } from '@/lib/utils'
+import { HojaFiltros } from './salidas/Filtros'
 
-const consultaViajes = (b: Pick<Busqueda, 'origen' | 'destino' | 'fecha'>) => ({
-  queryKey: ['viajes', b.origen, b.destino, b.fecha],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api.catalogo.buscar(b.origen, b.destino, b.fecha, signal),
-  staleTime: 45_000, // igual que el cache de búsqueda del Catalog Service
-})
+const POR_PAGINA = 20
 
-/** Precio que paga el pasajero: el de la oferta si hay una activa. */
-const precioFinal = (v: ResultadoViaje) => v.ofertaActiva?.precioOferta ?? v.precioBase
+/** Precio que paga el pasajero: el del tramo, el de la oferta activa o el base. */
+const precioFinal = (v: ResultadoViaje) => v.precio ?? v.ofertaActiva?.precioOferta ?? v.precioBase
+const salidaDe = (v: ResultadoViaje) => v.salida ?? v.fechaSalida
+const llegadaDe = (v: ResultadoViaje) => v.llegada ?? v.fechaLlegadaEstimada
 
-/** Pantalla 03. Salidas del día: precio más bajo por día, regla de 24 h y tarjetas robustas al peor caso. */
+/** Lee los filtros de la URL (así se pueden compartir y sobreviven a recargar). */
+function filtrosDe(p: URLSearchParams): Filtros {
+  const n = (k: string) => (p.get(k) ? Number(p.get(k)) : undefined)
+  return {
+    companyId: p.get('empresa') ?? undefined,
+    franja: (p.get('franja') ?? undefined) as Filtros['franja'],
+    precioMin: n('min'),
+    precioMax: n('max'),
+    tipoBus: p.get('bus') ?? undefined,
+    sort: (p.get('orden') ?? undefined) as Filtros['sort'],
+    order: (p.get('dir') ?? undefined) as Filtros['order'],
+  }
+}
+
+function conFiltros(base: string, f: Filtros, regreso: string | null): string {
+  const p = new URLSearchParams(base)
+  const poner = (k: string, v: unknown) => (v != null && v !== '' ? p.set(k, String(v)) : p.delete(k))
+  poner('empresa', f.companyId)
+  poner('franja', f.franja)
+  poner('min', f.precioMin)
+  poner('max', f.precioMax)
+  poner('bus', f.tipoBus)
+  poner('orden', f.sort)
+  poner('dir', f.order)
+  poner('regreso', regreso)
+  return p.toString()
+}
+
+/**
+ * Pantalla 03. Salidas (P-01): fila de 7 días con el precio más bajo (/trips/calendar), filtros (empresa, franja,
+ * precio, tipo de bus, orden), paginado con "Cargar más" (X-Total-Count), ida y vuelta (/trips/round-trip),
+ * tramos intermedios (fromOrden/toOrden pasan a los puestos) e íconos de servicios del bus.
+ */
 export function Salidas() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const busqueda = desdeParametros(params)
+  const filtros = filtrosDe(params)
+  const regreso = params.get('regreso')
   const [elegida, setElegida] = useState(0)
-
+  const [verFiltros, setVerFiltros] = useState(false)
+  const [editando, setEditando] = useState(false)
+  const [sentido, setSentido] = useState<'ida' | 'vuelta'>('ida')
   useAcento(busqueda?.destino)
-  const resultado = useQuery({ ...consultaViajes(busqueda ?? { origen: '', destino: '', fecha: '' }), enabled: !!busqueda })
 
-  // Tira de días: el precio más bajo de cada día (comparten cache con la búsqueda principal).
-  const inicio = busqueda ? maxFecha(hoy(), sumarDias(busqueda.fecha, -1)) : hoy()
-  const dias = Array.from({ length: 5 }, (_, i) => sumarDias(inicio, i))
-  const porDia = useQueries({
-    queries: dias.map((fecha) => ({ ...consultaViajes({ ...(busqueda as Busqueda), fecha }), enabled: !!busqueda })),
+  const b = busqueda ?? { origen: '', destino: '', fecha: hoy(), pasajeros: 1 }
+  const resultado = useInfiniteQuery({
+    queryKey: ['viajes-filtrados', b.origen, b.destino, b.fecha, filtros],
+    queryFn: ({ pageParam, signal }) => api.catalogo.buscarFiltrado(b.origen, b.destino, b.fecha, { ...filtros, page: pageParam, size: POR_PAGINA, tramos: true }, signal),
+    initialPageParam: 0,
+    getNextPageParam: (ultima, todas) => (ultima.viajes.length > 0 && todas.reduce((n, p) => n + p.viajes.length, 0) < ultima.total ? todas.length : undefined),
+    enabled: !!busqueda && !regreso,
+    staleTime: 45_000,
+  })
+  const idaVuelta = useQuery({
+    queryKey: ['ida-y-vuelta', b.origen, b.destino, b.fecha, regreso, filtros],
+    queryFn: () => api.catalogo.idaYVuelta(b.origen, b.destino, b.fecha, regreso!, { ...filtros, tramos: true }),
+    enabled: !!busqueda && !!regreso,
+    staleTime: 45_000,
+  })
+
+  // Fila de 7 días: precio más bajo y si hay cupo, en una sola llamada.
+  const inicio = busqueda ? maxFecha(hoy(), sumarDias(busqueda.fecha, -2)) : hoy()
+  const calendario = useQuery({
+    queryKey: ['calendario', b.origen, b.destino, inicio],
+    queryFn: () => api.catalogo.calendario(b.origen, b.destino, inicio, 7),
+    enabled: !!busqueda,
+    staleTime: 60_000,
   })
 
   if (!busqueda) return <Navigate to="/inicio" replace />
 
-  const irAFecha = (fecha: string) => {
+  const irA = (cambios: Partial<Busqueda>, nuevoRegreso = regreso) => {
     setElegida(0)
-    setParams(aParametros({ ...busqueda, fecha }), { replace: true })
+    setParams(conFiltros(aParametros({ ...busqueda, ...cambios }), filtros, nuevoRegreso), { replace: true })
   }
 
-  const viajes = [...(resultado.data ?? [])].sort((a, b) => a.fechaSalida.localeCompare(b.fechaSalida))
+  const consulta = regreso ? idaVuelta : resultado
+  const lista = regreso
+    ? (sentido === 'ida' ? idaVuelta.data?.ida : idaVuelta.data?.vuelta) ?? []
+    : (resultado.data?.pages.flatMap((p) => p.viajes) ?? [])
+  const viajes = [...lista].sort((x, y) => (filtros.sort ? 0 : salidaDe(x).localeCompare(salidaDe(y))))
+  const total = resultado.data?.pages[0]?.total ?? viajes.length
   const sel = Math.min(elegida, Math.max(0, viajes.length - 1))
+  const n = cuantosFiltros(filtros)
+  const dias = calendario.data ?? Array.from({ length: 7 }, (_, i) => ({ fecha: sumarDias(inicio, i), precioMinimo: null, hayCupo: null }))
 
   return (
     <Pantalla aSangre>
       <FranjaCiudad
-        destino={busqueda.destino}
-        subtitulo={`Desde ${busqueda.origen}, ${fechaCorta(fechaDesdeApi(busqueda.fecha))}, ${plural(busqueda.pasajeros, 'persona', 'personas')}`}
-        conteo={resultado.isSuccess && viajes.some((v) => !v.agotado) ? plural(viajes.filter((v) => !v.agotado).length, 'salida con puestos', 'salidas con puestos') : null}
+        destino={sentido === 'vuelta' ? busqueda.origen : busqueda.destino}
+        subtitulo={`Desde ${sentido === 'vuelta' ? busqueda.destino : busqueda.origen}, ${fechaCorta(fechaDesdeApi(sentido === 'vuelta' && regreso ? regreso : busqueda.fecha))}, ${plural(busqueda.pasajeros, 'persona', 'personas')}`}
+        conteo={consulta.isSuccess && viajes.some((v) => !v.agotado) ? plural(regreso ? viajes.filter((v) => !v.agotado).length : total, 'salida', 'salidas') : null}
       />
 
       <div className="relative -mt-6 flex min-h-0 flex-1 flex-col rounded-t-[28px] bg-fondo pt-4">
-      <div role="tablist" aria-label="Día del viaje" className="carril gap-2 px-5">
-        {dias.map((fecha, i) => {
-          const on = fecha === busqueda.fecha
-          const datos = porDia[i]?.data?.filter((v) => !v.agotado)
-          const minimo = datos && datos.length > 0 ? Math.min(...datos.map(precioFinal)) : null
-          const [dia, num] = fechaCorta(fechaDesdeApi(fecha)).split(' ')
-          return (
-            <button
-              key={fecha}
-              role="tab"
-              aria-selected={on}
-              onClick={() => irAFecha(fecha)}
-              className={cn(
-                'tap flex h-[62px] w-[68px] flex-col items-center justify-center gap-0.5 rounded-2xl border-[1.5px] transition-[transform,background-color]',
-                on ? 'border-tinta bg-tinta text-white' : 'border-linea bg-superficie text-tinta',
+        <div className="flex gap-2 px-5 pb-3">
+          <Button variante="contorno" tamano="md" onClick={() => setEditando(true)}>
+            <ArrowLeftRight className="size-4" aria-hidden="true" />
+            Cambiar ruta
+          </Button>
+          <Button variante={n > 0 ? 'tinta' : 'contorno'} tamano="md" onClick={() => setVerFiltros(true)}>
+            <SlidersHorizontal className="size-4" aria-hidden="true" />
+            {n > 0 ? `Filtros · ${n}` : 'Filtros'}
+          </Button>
+        </div>
+
+        {regreso ? (
+          <div className="px-5 pb-3">
+            <Segmentos
+              etiqueta="Sentido"
+              rol="tablist"
+              valor={sentido}
+              alCambiar={(s) => {
+                setSentido(s)
+                setElegida(0)
+              }}
+              opciones={[
+                { valor: 'ida', texto: `Ida · ${fechaCorta(fechaDesdeApi(busqueda.fecha))}` },
+                { valor: 'vuelta', texto: `Vuelta · ${fechaCorta(fechaDesdeApi(regreso))}` },
+              ]}
+            />
+          </div>
+        ) : (
+          <div role="tablist" aria-label="Día del viaje" className="carril gap-2 px-5">
+            {dias.map((d) => {
+              const on = d.fecha === busqueda.fecha
+              const [dia, num] = fechaCorta(fechaDesdeApi(d.fecha)).split(' ')
+              return (
+                <button
+                  key={d.fecha}
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => irA({ fecha: d.fecha })}
+                  className={cn(
+                    'tap flex h-[62px] w-[68px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border-[1.5px] transition-[transform,background-color]',
+                    on ? 'border-tinta bg-tinta text-white' : 'border-linea bg-superficie text-tinta',
+                    d.hayCupo === false && !on && 'opacity-60',
+                  )}
+                >
+                  <span className="text-[12px] font-semibold">
+                    {dia} {num}
+                  </span>
+                  <span className="num text-[13px] font-bold">{calendario.isPending ? '···' : d.hayCupo === false ? 'lleno' : dineroCorto(d.precioMinimo)}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {consulta.isPending ? (
+          <Esqueleto />
+        ) : consulta.isError ? (
+          <ErrorBusqueda error={consulta.error} reintentar={() => consulta.refetch()} />
+        ) : viajes.length === 0 ? (
+          <SinViajes alSiguiente={() => irA({ fecha: sumarDias(busqueda.fecha, 1) })} />
+        ) : (
+          <>
+            <Regla viajes={viajes} elegida={sel} alElegir={setElegida} />
+            <ul className="scroll-hoja flex min-h-0 flex-1 flex-col gap-2.5 px-5 pt-3 pb-[calc(20px+env(safe-area-inset-bottom,0px))]">
+              {viajes.map((v, i) => (
+                <li key={`${v.itineraryId}-${v.fromOrden ?? 0}`} className="entra" style={{ animationDelay: `${Math.min(i, 4) * 50}ms` }}>
+                  <TarjetaViaje viaje={v} elegida={i === sel} alAbrir={() => navigate(rutaAsientos(v, busqueda.pasajeros))} />
+                </li>
+              ))}
+              {!regreso && (
+                <li>
+                  <CargarMas hay={!!resultado.hasNextPage} cargando={resultado.isFetchingNextPage} alCargar={() => resultado.fetchNextPage()} mostrados={viajes.length} total={total} />
+                </li>
               )}
-            >
-              <span className="text-[12px] font-semibold">
-                {dia} {num}
-              </span>
-              <span className="num text-[13px] font-bold">{porDia[i]?.isPending ? '···' : dineroCorto(minimo)}</span>
-            </button>
-          )
-        })}
+            </ul>
+          </>
+        )}
       </div>
 
-      {resultado.isPending ? (
-        <Esqueleto />
-      ) : resultado.isError ? (
-        <ErrorBusqueda error={resultado.error} reintentar={() => resultado.refetch()} />
-      ) : viajes.length === 0 ? (
-        <SinViajes alSiguiente={() => irAFecha(sumarDias(busqueda.fecha, 1))} />
-      ) : (
-        <>
-          <Regla viajes={viajes} elegida={sel} alElegir={setElegida} />
-          <ul className="scroll-hoja flex min-h-0 flex-1 flex-col gap-2.5 px-5 pt-3 pb-[calc(20px+env(safe-area-inset-bottom,0px))]">
-            {viajes.map((v, i) => (
-              <li key={v.itineraryId} className="entra" style={{ animationDelay: `${Math.min(i, 4) * 50}ms` }}>
-                <TarjetaViaje
-                  viaje={v}
-                  elegida={i === sel}
-                  alAbrir={() => navigate(`/viaje/${v.itineraryId}/asientos?pasajeros=${busqueda.pasajeros}`)}
-                />
-              </li>
-            ))}
-          </ul>
-        </>
+      {verFiltros && (
+        <HojaFiltros
+          abierta
+          alCerrar={() => setVerFiltros(false)}
+          filtros={filtros}
+          busqueda={busqueda}
+          alAplicar={(f) => setParams(conFiltros(aParametros(busqueda), f, regreso), { replace: true })}
+        />
       )}
-      </div>
+      {editando && (
+        <EditarRuta
+          busqueda={busqueda}
+          regreso={regreso}
+          alCerrar={() => setEditando(false)}
+          alBuscar={(nueva, vuelta) => {
+            setEditando(false)
+            setSentido('ida')
+            irA(nueva, vuelta)
+          }}
+        />
+      )}
     </Pantalla>
+  )
+}
+
+/** Cambiar origen, destino, fecha y la vuelta, con autocompletado de ciudades y terminales. */
+function EditarRuta({
+  busqueda,
+  regreso,
+  alCerrar,
+  alBuscar,
+}: {
+  busqueda: Busqueda
+  regreso: string | null
+  alCerrar: () => void
+  alBuscar: (b: Partial<Busqueda>, regreso: string | null) => void
+}) {
+  const [origen, setOrigen] = useState(busqueda.origen)
+  const [destino, setDestino] = useState(busqueda.destino)
+  const [fecha, setFecha] = useState(busqueda.fecha)
+  const [conVuelta, setConVuelta] = useState(!!regreso)
+  const [vuelta, setVuelta] = useState(regreso ?? sumarDias(busqueda.fecha, 2))
+  const valida = origen.trim() && destino.trim() && origen.trim().toLowerCase() !== destino.trim().toLowerCase() && (!conVuelta || vuelta >= fecha)
+  const enviar = (e: FormEvent) => {
+    e.preventDefault()
+    if (valida) alBuscar({ origen: origen.trim(), destino: destino.trim(), fecha }, conVuelta ? vuelta : null)
+  }
+  return (
+    <Hoja abierta alCambiar={(a) => !a && alCerrar()} titulo="¿A dónde viajas?">
+      <form onSubmit={enviar} className="flex flex-col gap-3 pb-3" noValidate>
+        <CampoLugar etiqueta="Desde" valor={origen} alCambiar={setOrigen} />
+        <CampoLugar etiqueta="Hacia" valor={destino} alCambiar={setDestino} />
+        <Campo etiqueta="Fecha de ida" type="date" min={hoy()} value={fecha} onChange={(e) => e.target.value && setFecha(e.target.value)} />
+        <Casilla etiqueta="Ida y vuelta" marcada={conVuelta} alCambiar={setConVuelta} />
+        {conVuelta && <Campo etiqueta="Fecha de vuelta" type="date" min={fecha} value={vuelta} onChange={(e) => e.target.value && setVuelta(e.target.value)} />}
+        <Button type="submit" ancho="completo" disabled={!valida}>
+          Buscar salidas
+        </Button>
+      </form>
+    </Hoja>
   )
 }
 
@@ -177,12 +332,13 @@ function Regla({ viajes, elegida, alElegir }: { viajes: ResultadoViaje[]; elegid
 }
 
 function TarjetaViaje({ viaje: v, elegida, alAbrir }: { viaje: ResultadoViaje; elegida: boolean; alAbrir: () => void }) {
-  const masDias = diasDespues(v.fechaSalida, v.fechaLlegadaEstimada)
+  const masDias = diasDespues(salidaDe(v), llegadaDe(v))
+  const tramo = v.fromOrden != null
 
   if (v.agotado) {
     return (
       <div className="flex items-center gap-3 rounded-tarjeta bg-[#eceee7] px-4 py-3.5">
-        <span className="num shrink-0 text-[20px] font-bold text-texto-2 line-through">{horaCorta(v.fechaSalida)}</span>
+        <span className="num shrink-0 text-[20px] font-bold text-texto-2 line-through">{horaCorta(salidaDe(v))}</span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-[14px] font-semibold text-texto-2">Agotado</span>
           <span title={v.empresa} className="truncate text-[13px] text-texto-2">
@@ -208,13 +364,13 @@ function TarjetaViaje({ viaje: v, elegida, alAbrir }: { viaje: ResultadoViaje; e
       )}
     >
       <div className="flex w-full items-center gap-3">
-        <span className="num shrink-0 text-[22px] font-bold">{horaCorta(v.fechaSalida)}</span>
+        <span className="num shrink-0 text-[22px] font-bold">{horaCorta(salidaDe(v))}</span>
         <span className="flex min-w-3 flex-1 flex-col items-center gap-0.5">
-          <span className="text-[11px] whitespace-nowrap text-texto-2">{duracion(v.duracionMinutos)}</span>
+          <span className="text-[11px] whitespace-nowrap text-texto-2">{duracion(tramo ? (new Date(llegadaDe(v)).getTime() - new Date(salidaDe(v)).getTime()) / 60_000 : v.duracionMinutos)}</span>
           <span className="h-0.5 w-full rounded-full bg-tinta" />
         </span>
         <span className="num shrink-0 text-[22px] font-bold">
-          {horaCorta(v.fechaLlegadaEstimada)}
+          {horaCorta(llegadaDe(v))}
           {masDias > 0 && <sup className="ml-0.5 text-[11px] text-texto-2">+{masDias}</sup>}
         </span>
       </div>
@@ -223,6 +379,12 @@ function TarjetaViaje({ viaje: v, elegida, alAbrir }: { viaje: ResultadoViaje; e
           <span title={v.empresa} className="truncate text-[14px] font-semibold">
             {v.empresa}
           </span>
+          {tramo && (
+            <span className="text-[12px] font-semibold text-texto-2">
+              Tramo {v.origen} → {v.destino}
+            </span>
+          )}
+          <IconosServicios servicios={v.servicios} />
           {libres == null ? (
             <span className="text-[13px] text-texto-2">Toca para ver los puestos</span>
           ) : (

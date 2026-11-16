@@ -33,10 +33,12 @@ import type {
   EstadoBus,
   EstadosAsientos,
   Eta,
+  FacetasBusqueda,
   FiltroAuditoria,
   FiltroItinerarios,
   FiltroOfertasOperador,
   FiltrosBusqueda,
+  FiltrosCalendario,
   FiltroUsuarios,
   FlotaEnVivo,
   GoogleLoginRequest,
@@ -198,8 +200,16 @@ export const api = {
     },
     empresasDeBusqueda: (origen: string, destino: string, fecha: string) =>
       solicitar<EmpresaBusqueda[]>('GET', '/trips/search/companies', { query: { origin: origen, destination: destino, date: fecha } }),
-    calendario: (origen: string, destino: string, desde: string, dias = 7) =>
-      solicitar<DiaCalendario[]>('GET', '/trips/calendar', { query: { origin: origen, destination: destino, from: desde, days: dias } }),
+    /** US-136: con los mismos tramos, companyId, franja y tipoBus que la búsqueda de la lista. */
+    calendario: (origen: string, destino: string, desde: string, dias = 7, filtros: FiltrosCalendario = {}) =>
+      solicitar<DiaCalendario[]>('GET', '/trips/calendar', {
+        query: { origin: origen, destination: destino, from: desde, days: dias, ...filtros },
+      }),
+    /** Límites de precio, empresas y tipos de bus para armar los filtros de ese día y esa ruta. */
+    facetas: (origen: string, destino: string, fecha: string, filtros: FiltrosCalendario = {}) =>
+      solicitar<FacetasBusqueda>('GET', '/trips/search/facets', {
+        query: { origin: origen, destination: destino, date: fecha, ...filtros },
+      }),
     idaYVuelta: (origen: string, destino: string, fecha: string, regreso: string, filtros: FiltrosBusqueda = {}) =>
       solicitar<IdaYVuelta>('GET', '/trips/round-trip', {
         query: { origin: origen, destination: destino, date: fecha, returnDate: regreso, ...filtros },

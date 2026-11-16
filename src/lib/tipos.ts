@@ -125,6 +125,8 @@ export type ResultadoViaje = {
   salida?: FechaIso
   llegada?: FechaIso
   precio?: number
+  /** Precio por adulto sin recargo de asiento, con la oferta vigente y la temporada (el mismo del calendario). */
+  precioDesde?: number
 }
 
 export type Parada = {
@@ -556,9 +558,27 @@ export type ResultadoBusqueda = { viajes: ResultadoViaje[]; total: number }
 
 export type Lugar = { tipo: 'CIUDAD' | 'TERMINAL'; nombre: string; ciudad: string; terminalId?: Uuid }
 
+/** GET /trips/calendar: mismos viajes que /trips/search ese día; precioMinimo = menor precioDesde con cupo. */
 export type DiaCalendario = { fecha: string; precioMinimo: number | null; viajes?: number; hayCupo: boolean | null }
 
+/** Filtros que comparten el calendario y las facetas con /trips/search (sin precio, orden ni página). */
+export type FiltrosCalendario = Pick<FiltrosBusqueda, 'tramos' | 'companyId' | 'franja' | 'tipoBus'>
+
 export type EmpresaBusqueda = { id: Uuid; nombre: string }
+
+/** Empresa de las facetas: terminal de salida en el origen (null si no tiene) y salidas de esa fecha. */
+export type EmpresaFaceta = { id: Uuid; nombre: string; terminal: string | null; viajes: number }
+
+/**
+ * GET /trips/search/facets: precioMin y precioMax ignoran el filtro de precio (null sin viajes); empresas = todas
+ * las que cubren la ruta en 14 días, ordenadas por nombre; tiposBus = los del día.
+ */
+export type FacetasBusqueda = {
+  precioMin: number | null
+  precioMax: number | null
+  empresas: EmpresaFaceta[]
+  tiposBus: string[]
+}
 
 export type IdaYVuelta = { ida: ResultadoViaje[]; vuelta: ResultadoViaje[] }
 

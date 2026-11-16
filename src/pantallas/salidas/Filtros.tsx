@@ -1,12 +1,14 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Segmentos, Selector } from '@/components/ui/campos'
 import { Hoja } from '@/components/ui/hoja'
-import { Campo } from '@/components/ui/input'
-import { api } from '@/lib/endpoints'
 import type { Filtros } from '@/features/busqueda'
-import type { Franja } from '@/lib/tipos'
+import { consultaFacetas, filtroDeRango, limitesDe, nombreTipoBus, rangoElegido, recortarPrecio } from '@/features/precios'
+import { dinero } from '@/lib/formato'
+import type { FacetasBusqueda, Franja } from '@/lib/tipos'
+import { ListaEmpresas } from './ListaEmpresas'
+import { RangoPrecio } from './RangoPrecio'
 
 const ORDENES = [
   { valor: 'salida-asc', texto: 'Salida más temprana' },
@@ -16,7 +18,10 @@ const ORDENES = [
   { valor: 'duracion-asc', texto: 'Más rápido' },
 ]
 
-/** P-01: empresa, franja del día, rango de precio, tipo de bus y orden. */
+/**
+ * P-01: empresa (lista con buscador de /trips/search/facets), franja del día, rango de precio con los límites de ese
+ * día y esa ruta, tipo de bus y orden. Las facetas se recalculan con la empresa, la franja y el tipo de bus elegidos.
+ */
 export function HojaFiltros({
   abierta,
   alCerrar,
@@ -31,24 +36,20 @@ export function HojaFiltros({
   busqueda: { origen: string; destino: string; fecha: string }
 }) {
   const [borrador, setBorrador] = useState<Filtros>(filtros)
-  const empresas = useQuery({
-    queryKey: ['empresas-busqueda', busqueda.origen, busqueda.destino, busqueda.fecha],
-    queryFn: () => api.catalogo.empresasDeBusqueda(busqueda.origen, busqueda.destino, busqueda.fecha),
-    enabled: abierta,
-    staleTime: 60_000,
-  })
+  const facetas = useQuery({ ...consultaFacetas(busqueda, borrador), enabled: abierta, placeholderData: keepPreviousData })
   const cambiar = (parcial: Partial<Filtros>) => setBorrador((b) => ({ ...b, ...parcial }))
-  const numero = (v: string) => (v.replace(/\D/g, '') ? Number(v.replace(/\D/g, '')) : undefined)
+  const tipos = [...(facetas.data?.tiposBus ?? [])]
+  if (borrador.tipoBus && !tipos.includes(borrador.tipoBus)) tipos.push(borrador.tipoBus)
 
   return (
     <Hoja abierta={abierta} alCambiar={(a) => !a && alCerrar()} titulo="Filtrar salidas">
-      <div className="flex flex-col gap-3 pb-3">
-        <Selector
-          etiqueta="Empresa"
-          vacia="Todas las empresas"
-          value={borrador.companyId ?? ''}
-          onChange={(e) => cambiar({ companyId: e.target.value || undefined })}
-          opciones={(empresas.data ?? []).map((e) => ({ valor: e.id, texto: e.nombre }))}
+      <div className="flex flex-col gap-4 pb-3">
+        <ListaEmpresas
+          empresas={facetas.data?.empresas ?? []}
+          origen={busqueda.origen}
+          valor={borrador.companyId}
+          alCambiar={(companyId) => cambiar({ companyId })}
+          cargando={facetas.isPending}
         />
         <Segmentos<'' | Franja>
           etiqueta="Hora del día"
@@ -61,19 +62,13 @@ export function HojaFiltros({
             { valor: 'NOCHE', texto: 'Noche' },
           ]}
         />
-        <div className="grid grid-cols-2 gap-3">
-          <Campo etiqueta="Precio mínimo" inputMode="numeric" value={borrador.precioMin ?? ''} onChange={(e) => cambiar({ precioMin: numero(e.target.value) })} />
-          <Campo etiqueta="Precio máximo" inputMode="numeric" value={borrador.precioMax ?? ''} onChange={(e) => cambiar({ precioMax: numero(e.target.value) })} />
-        </div>
+        <ControlPrecio facetas={facetas.data} cargando={facetas.isPending} filtros={borrador} alCambiar={cambiar} />
         <Selector
           etiqueta="Tipo de bus"
           vacia="Cualquiera"
           value={borrador.tipoBus ?? ''}
           onChange={(e) => cambiar({ tipoBus: e.target.value || undefined })}
-          opciones={[
-            { valor: 'UN_PISO', texto: 'Un piso' },
-            { valor: 'DOS_PISOS', texto: 'Dos pisos' },
-          ]}
+          opciones={tipos.map((t) => ({ valor: t, texto: nombreTipoBus(t) }))}
         />
         <Selector
           etiqueta="Ordenar por"
@@ -87,7 +82,7 @@ export function HojaFiltros({
         <Button
           ancho="completo"
           onClick={() => {
-            alAplicar(borrador)
+            alAplicar(recortarPrecio(borrador, facetas.isPlaceholderData ? undefined : facetas.data))
             alCerrar()
           }}
         >
@@ -108,4 +103,39 @@ export function HojaFiltros({
       </div>
     </Hoja>
   )
+}
+
+/** Barra de precio con los límites de las facetas; un solo precio sin barra; sin viajes, nada. */
+function ControlPrecio({
+  facetas,
+  cargando,
+  filtros,
+  alCambiar,
+}: {
+  facetas: FacetasBusqueda | undefined
+  cargando: boolean
+  filtros: Filtros
+  alCambiar: (f: Partial<Filtros>) => void
+}) {
+  if (cargando && !facetas) {
+    return (
+      <div aria-busy="true" aria-label="Cargando precios" className="flex flex-col gap-2">
+        <span className="text-[13px] font-semibold">Precio</span>
+        <div className="h-11 rounded-control bg-muted" />
+      </div>
+    )
+  }
+  const limites = limitesDe(facetas)
+  if (!limites) return null
+  if (limites.min === limites.max) {
+    return (
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[13px] font-semibold">Precio</span>
+        <span className="text-[14px] text-texto-2">
+          Un solo precio este día: <strong className="num text-tinta">{dinero(limites.min)}</strong>
+        </span>
+      </div>
+    )
+  }
+  return <RangoPrecio limites={limites} valor={rangoElegido(filtros, limites)} alCambiar={(r) => alCambiar(filtroDeRango(r, limites))} />
 }

@@ -19,7 +19,6 @@ import { api } from '@/lib/endpoints'
 import {
   diasDespues,
   dinero,
-  dineroCorto,
   duracion,
   fechaCorta,
   fechaDesdeApi,
@@ -29,12 +28,12 @@ import {
 } from '@/lib/formato'
 import type { ResultadoViaje } from '@/lib/tipos'
 import { cn } from '@/lib/utils'
+import { consultaFacetas, filtrosDelCalendario, indiceMasBarato, precioDe, recortarPrecio } from '@/features/precios'
+import { FilaDias } from './salidas/FilaDias'
 import { HojaFiltros } from './salidas/Filtros'
 
 const POR_PAGINA = 20
 
-/** Precio que paga el pasajero: el del tramo, el de la oferta activa o el base. */
-const precioFinal = (v: ResultadoViaje) => v.precio ?? v.ofertaActiva?.precioOferta ?? v.precioBase
 const salidaDe = (v: ResultadoViaje) => v.salida ?? v.fechaSalida
 const llegadaDe = (v: ResultadoViaje) => v.llegada ?? v.fechaLlegadaEstimada
 
@@ -67,15 +66,16 @@ function conFiltros(base: string, f: Filtros, regreso: string | null): string {
 }
 
 /**
- * Pantalla 03. Salidas (P-01): fila de 7 días con el precio más bajo (/trips/calendar), filtros (empresa, franja,
- * precio, tipo de bus, orden), paginado con "Cargar más" (X-Total-Count), ida y vuelta (/trips/round-trip),
+ * Pantalla 03. Salidas (P-01): fila de 7 días con el precio "desde" más bajo (/trips/calendar con los mismos tramos y
+ * filtros que la lista), filtros (empresa, franja, precio con los límites de /trips/search/facets, tipo de bus,
+ * orden), paginado con "Cargar más" (X-Total-Count), ida y vuelta (/trips/round-trip),
  * tramos intermedios (fromOrden/toOrden pasan a los puestos) e íconos de servicios del bus.
  */
 export function Salidas() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const busqueda = desdeParametros(params)
-  const filtros = filtrosDe(params)
+  const filtrosUrl = filtrosDe(params)
   const regreso = params.get('regreso')
   const [elegida, setElegida] = useState(0)
   const [verFiltros, setVerFiltros] = useState(false)
@@ -84,26 +84,32 @@ export function Salidas() {
   useAcento(busqueda?.destino)
 
   const b = busqueda ?? { origen: '', destino: '', fecha: hoy(), pasajeros: 1 }
+  // Límites de precio de ese día y esa ruta: el rango elegido se recorta si quedó por fuera (cambio de día o de ruta).
+  const facetas = useQuery({ ...consultaFacetas(b, filtrosUrl), enabled: !!busqueda })
+  const filtros = recortarPrecio(filtrosUrl, facetas.data)
+  // Con un precio en la URL se esperan los límites para no buscar dos veces (con y sin recorte).
+  const esperaLimites = (filtrosUrl.precioMin != null || filtrosUrl.precioMax != null) && facetas.isPending
   const resultado = useInfiniteQuery({
     queryKey: ['viajes-filtrados', b.origen, b.destino, b.fecha, filtros],
     queryFn: ({ pageParam, signal }) => api.catalogo.buscarFiltrado(b.origen, b.destino, b.fecha, { ...filtros, page: pageParam, size: POR_PAGINA, tramos: true }, signal),
     initialPageParam: 0,
     getNextPageParam: (ultima, todas) => (ultima.viajes.length > 0 && todas.reduce((n, p) => n + p.viajes.length, 0) < ultima.total ? todas.length : undefined),
-    enabled: !!busqueda && !regreso,
+    enabled: !!busqueda && !regreso && !esperaLimites,
     staleTime: 45_000,
   })
   const idaVuelta = useQuery({
     queryKey: ['ida-y-vuelta', b.origen, b.destino, b.fecha, regreso, filtros],
     queryFn: () => api.catalogo.idaYVuelta(b.origen, b.destino, b.fecha, regreso!, { ...filtros, tramos: true }),
-    enabled: !!busqueda && !!regreso,
+    enabled: !!busqueda && !!regreso && !esperaLimites,
     staleTime: 45_000,
   })
 
-  // Fila de 7 días: precio más bajo y si hay cupo, en una sola llamada.
+  // Fila de 7 días: el mismo conjunto de viajes que la lista (tramos y filtros activos), en una sola llamada.
   const inicio = busqueda ? maxFecha(hoy(), sumarDias(busqueda.fecha, -2)) : hoy()
+  const filtrosCalendario = filtrosDelCalendario(filtros)
   const calendario = useQuery({
-    queryKey: ['calendario', b.origen, b.destino, inicio],
-    queryFn: () => api.catalogo.calendario(b.origen, b.destino, inicio, 7),
+    queryKey: ['calendario', b.origen, b.destino, inicio, filtrosCalendario],
+    queryFn: () => api.catalogo.calendario(b.origen, b.destino, inicio, 7, filtrosCalendario),
     enabled: !!busqueda,
     staleTime: 60_000,
   })
@@ -123,7 +129,9 @@ export function Salidas() {
   const total = resultado.data?.pages[0]?.total ?? viajes.length
   const sel = Math.min(elegida, Math.max(0, viajes.length - 1))
   const n = cuantosFiltros(filtros)
-  const dias = calendario.data ?? Array.from({ length: 7 }, (_, i) => ({ fecha: sumarDias(inicio, i), precioMinimo: null, hayCupo: null }))
+  const fechas = Array.from({ length: 7 }, (_, i) => sumarDias(inicio, i))
+  const precioDelDia = calendario.data?.find((d) => d.fecha === busqueda.fecha)?.precioMinimo
+  const masBarato = regreso ? -1 : indiceMasBarato(viajes, precioDelDia)
 
   return (
     <Pantalla aSangre>
@@ -162,36 +170,13 @@ export function Salidas() {
             />
           </div>
         ) : (
-          <div role="tablist" aria-label="Día del viaje" className="carril gap-2 px-5">
-            {dias.map((d) => {
-              const on = d.fecha === busqueda.fecha
-              const [dia, num] = fechaCorta(fechaDesdeApi(d.fecha)).split(' ')
-              return (
-                <button
-                  key={d.fecha}
-                  role="tab"
-                  aria-selected={on}
-                  onClick={() => irA({ fecha: d.fecha })}
-                  className={cn(
-                    'tap flex h-[62px] w-[68px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border-[1.5px] transition-[transform,background-color]',
-                    on ? 'border-tinta bg-tinta text-white' : 'border-linea bg-superficie text-tinta',
-                    d.hayCupo === false && !on && 'opacity-60',
-                  )}
-                >
-                  <span className="text-[12px] font-semibold">
-                    {dia} {num}
-                  </span>
-                  <span className="num text-[13px] font-bold">{calendario.isPending ? '···' : d.hayCupo === false ? 'lleno' : dineroCorto(d.precioMinimo)}</span>
-                </button>
-              )
-            })}
-          </div>
+          <FilaDias fechas={fechas} dias={calendario.isPending ? undefined : (calendario.data ?? [])} elegida={busqueda.fecha} alElegir={(fecha) => irA({ fecha })} />
         )}
 
         {consulta.isPending ? (
           <Esqueleto />
         ) : consulta.isError ? (
-          <ErrorBusqueda error={consulta.error} reintentar={() => consulta.refetch()} />
+          <ErrorBusqueda error={consulta.error} reintentar={() => void consulta.refetch()} />
         ) : viajes.length === 0 ? (
           <SinViajes alSiguiente={() => irA({ fecha: sumarDias(busqueda.fecha, 1) })} />
         ) : (
@@ -200,12 +185,12 @@ export function Salidas() {
             <ul className="scroll-hoja flex min-h-0 flex-1 flex-col gap-2.5 px-5 pt-3 pb-[calc(20px+env(safe-area-inset-bottom,0px))]">
               {viajes.map((v, i) => (
                 <li key={`${v.itineraryId}-${v.fromOrden ?? 0}`} className="entra" style={{ animationDelay: `${Math.min(i, 4) * 50}ms` }}>
-                  <TarjetaViaje viaje={v} elegida={i === sel} alAbrir={() => navigate(rutaAsientos(v, busqueda.pasajeros))} />
+                  <TarjetaViaje viaje={v} elegida={i === sel} masBarato={i === masBarato} alAbrir={() => void navigate(rutaAsientos(v, busqueda.pasajeros))} />
                 </li>
               ))}
               {!regreso && (
                 <li>
-                  <CargarMas hay={!!resultado.hasNextPage} cargando={resultado.isFetchingNextPage} alCargar={() => resultado.fetchNextPage()} mostrados={viajes.length} total={total} />
+                  <CargarMas hay={!!resultado.hasNextPage} cargando={resultado.isFetchingNextPage} alCargar={() => void resultado.fetchNextPage()} mostrados={viajes.length} total={total} />
                 </li>
               )}
             </ul>
@@ -331,7 +316,7 @@ function Regla({ viajes, elegida, alElegir }: { viajes: ResultadoViaje[]; elegid
   )
 }
 
-function TarjetaViaje({ viaje: v, elegida, alAbrir }: { viaje: ResultadoViaje; elegida: boolean; alAbrir: () => void }) {
+function TarjetaViaje({ viaje: v, elegida, masBarato, alAbrir }: { viaje: ResultadoViaje; elegida: boolean; masBarato: boolean; alAbrir: () => void }) {
   const masDias = diasDespues(salidaDe(v), llegadaDe(v))
   const tramo = v.fromOrden != null
 
@@ -401,6 +386,7 @@ function TarjetaViaje({ viaje: v, elegida, alAbrir }: { viaje: ResultadoViaje; e
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end">
+          {masBarato && <span className="mb-1 flex h-5 items-center rounded-md bg-tinta px-1.5 text-[11px] font-bold text-white">Más barato</span>}
           {oferta && (
             <>
               <span className="mb-1 flex h-5 items-center rounded-md bg-naranja px-1.5 text-[11px] font-extrabold text-tinta">
@@ -409,7 +395,7 @@ function TarjetaViaje({ viaje: v, elegida, alAbrir }: { viaje: ResultadoViaje; e
               <span className="num text-[13px] text-texto-2 line-through">{dinero(v.precioBase)}</span>
             </>
           )}
-          <span className="num text-[20px] font-bold">{dinero(precioFinal(v))}</span>
+          <span className="num text-[20px] font-bold">{dinero(precioDe(v))}</span>
         </div>
       </div>
     </button>

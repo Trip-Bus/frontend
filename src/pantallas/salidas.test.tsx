@@ -39,13 +39,28 @@ const viaje = (v: Partial<ResultadoViaje>): ResultadoViaje => ({
   ...v,
 })
 
+const FACETAS = {
+  precioMin: 30_000,
+  precioMax: 50_000,
+  empresas: [
+    { id: 'c-2', nombre: 'Andino', terminal: null, viajes: 0 },
+    { id: 'c-1', nombre: 'Expreso', terminal: 'Terminal Salitre', viajes: 2 },
+  ],
+  tiposBus: ['UN_PISO', 'DOS_PISOS'],
+}
+
 function servidor(extra: Record<string, (url: string) => Response> = {}) {
   return vi.fn(async (entrada: RequestInfo | URL) => {
     const url = String(entrada)
     const k = Object.keys(extra).find((x) => url.includes(x))
     if (k) return extra[k](url)
-    if (url.includes('/trips/calendar')) return Response.json([{ fecha: '2099-01-10', precioMinimo: 45_000, hayCupo: true }, { fecha: '2099-01-11', precioMinimo: null, hayCupo: false }])
-    if (url.includes('/trips/search/companies')) return Response.json([{ id: 'c-1', nombre: 'Expreso' }])
+    if (url.includes('/trips/calendar'))
+      return Response.json([
+        { fecha: '2099-01-10', precioMinimo: 30_000, viajes: 3, hayCupo: true },
+        { fecha: '2099-01-11', precioMinimo: null, viajes: 1, hayCupo: false },
+        { fecha: '2099-01-12', precioMinimo: null, viajes: 0, hayCupo: null },
+      ])
+    if (url.includes('/trips/search/facets')) return Response.json(FACETAS)
     if (url.includes('/trips/search')) {
       const page = Number(new URL(url, 'http://x').searchParams.get('page'))
       return Response.json(page === 0 ? [viaje({}), viaje({ itineraryId: 'i-2', fromOrden: 2, toOrden: 3, salida: '2099-01-10T12:00:00Z', llegada: '2099-01-10T13:30:00Z', precio: 30_000, origen: 'Chocontá' })] : [viaje({ itineraryId: 'i-3', agotado: true })], {
@@ -101,19 +116,90 @@ describe('búsqueda de salidas', () => {
     const router = montar(fetchMock)
     fireEvent.click(await screen.findByRole('button', { name: 'Filtros' }))
     const hoja = await screen.findByRole('dialog')
-    await within(hoja).findByRole('option', { name: 'Expreso' })
-    fireEvent.change(within(hoja).getByLabelText('Empresa'), { target: { value: 'c-1' } })
+    expect(within(hoja).getByRole('group', { name: 'Terminal Salitre' })).toBeTruthy()
+    expect((within(hoja).getByRole('radio', { name: /Andino/ }) as HTMLInputElement).disabled).toBe(true)
+    fireEvent.click(within(hoja).getByRole('radio', { name: /Expreso/ }))
     fireEvent.click(within(hoja).getByRole('radio', { name: 'Noche' }))
-    fireEvent.change(within(hoja).getByLabelText('Precio máximo'), { target: { value: '$80.000' } })
+    const maximo = await within(hoja).findByRole('slider', { name: 'Precio máximo' })
+    expect(maximo.getAttribute('aria-valuemax')).toBe('50000')
+    fireEvent.keyDown(maximo, { key: 'PageDown' })
+    expect(within(hoja).getByRole('status').textContent).toBe('$30.000 – $40.000')
     fireEvent.change(within(hoja).getByLabelText('Tipo de bus'), { target: { value: 'DOS_PISOS' } })
     fireEvent.change(within(hoja).getByLabelText('Ordenar por'), { target: { value: 'precio-asc' } })
     fireEvent.click(within(hoja).getByRole('button', { name: 'Ver salidas' }))
     await waitFor(() => expect(router.state.location.search).toContain('empresa=c-1'))
+    expect(router.state.location.search).toContain('max=40000')
+    expect(router.state.location.search).not.toContain('min=')
     expect(await screen.findByRole('button', { name: 'Filtros · 4' })).toBeTruthy()
-    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => /companyId=c-1&franja=NOCHE&precioMax=80000&tipoBus=DOS_PISOS&sort=precio&order=asc/.test(String(u)))).toBe(true))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => /companyId=c-1&franja=NOCHE&precioMax=40000&tipoBus=DOS_PISOS&sort=precio&order=asc/.test(String(u)))).toBe(true))
+    // El calendario y las facetas usan los mismos tramos y filtros que la lista (sin precio ni orden).
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => /\/trips\/calendar\?.*tramos=true&companyId=c-1&franja=NOCHE&tipoBus=DOS_PISOS$/.test(String(u)))).toBe(true))
+    expect(fetchMock.mock.calls.some(([u]) => /\/trips\/search\/facets\?.*tramos=true&companyId=c-1&franja=NOCHE&tipoBus=DOS_PISOS$/.test(String(u)))).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Filtros · 4' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Quitar filtros' }))
     await waitFor(() => expect(router.state.location.search).not.toContain('empresa'))
+  })
+
+  it('el precio del día elegido es el menor precio de la lista y esa tarjeta dice "Más barato"', async () => {
+    const lista = [viaje({ itineraryId: 'a', precioDesde: 52_000 }), viaje({ itineraryId: 'b', fechaSalida: '2099-01-10T13:00:00Z', precioDesde: 45_500 }), viaje({ itineraryId: 'c', fechaSalida: '2099-01-10T15:00:00Z', precioBase: 61_000 })]
+    montar(
+      servidor({
+        '/trips/calendar': () => Response.json([{ fecha: '2099-01-10', precioMinimo: 45_500, viajes: 3, hayCupo: true }]),
+        '/trips/search?': () => Response.json(lista, { headers: { 'X-Total-Count': '3' } }),
+      }),
+    )
+    const dia = await screen.findByRole('tab', { selected: true })
+    await waitFor(() => expect(within(dia).getByText('desde')).toBeTruthy())
+    const precioDia = within(dia).getByText(/^\$/).textContent
+    await screen.findByText('Más barato')
+    const tarjetas = screen.getAllByRole('button').filter((b) => b.textContent?.includes('Expreso'))
+    const precios = tarjetas.map((t) => Number(within(t).getByText(/^\$[\d.]+$/).textContent!.replace(/\D/g, '')))
+    expect(precios).toEqual([52_000, 45_500, 61_000])
+    expect(precioDia).toBe('$45.500')
+    expect(Number(precioDia!.replace(/\D/g, ''))).toBe(Math.min(...precios))
+    const etiqueta = screen.getByText('Más barato')
+    expect(etiqueta.closest('button')!.textContent).toContain('$45.500')
+    expect(screen.getAllByText('Más barato')).toHaveLength(1)
+    expect(screen.getAllByRole('tab').find((t) => t.textContent?.includes('sin salidas'))?.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('recorta el precio elegido a los límites del día: en los extremos no lo envía', async () => {
+    const fetchMock = servidor()
+    montar(fetchMock, '/salidas?origen=Bogot%C3%A1&destino=Tunja&fecha=2099-01-10&pasajeros=1&min=10000&max=90000')
+    expect(await screen.findByRole('button', { name: 'Filtros' })).toBeTruthy()
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/trips/search?'))).toBe(true))
+    expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('/trips/search?')).every(([u]) => !String(u).includes('precio'))).toBe(true)
+  })
+
+  it('mientras llegan las facetas muestra el esqueleto y conserva un tipo de bus que ya no está', async () => {
+    const esperando: (() => void)[] = []
+    const pendiente = () => new Promise<Response>((r) => esperando.push(() => r(Response.json(FACETAS))))
+    montar(servidor({ '/trips/search/facets': () => pendiente() as unknown as Response }), '/salidas?origen=Tunja&destino=Bogot%C3%A1&fecha=2099-01-10&pasajeros=1&bus=MINI_VAN')
+    fireEvent.click(await screen.findByRole('button', { name: 'Filtros · 1' }))
+    const hoja = await screen.findByRole('dialog')
+    expect(within(hoja).getByLabelText('Cargando precios')).toBeTruthy()
+    expect(within(hoja).getByLabelText('Cargando empresas')).toBeTruthy()
+    for (const listo of esperando) listo()
+    expect(await within(hoja).findByRole('option', { name: 'Mini van' })).toBeTruthy()
+    expect(await within(hoja).findByRole('option', { name: 'Dos pisos' })).toBeTruthy()
+    // Desde otra ciudad, sin grupos por terminal.
+    expect(within(hoja).queryByRole('group', { name: 'Terminal Salitre' })).toBeNull()
+    fireEvent.keyDown(hoja, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('con un solo precio lo muestra sin barra y sin viajes oculta el control', async () => {
+    montar(servidor({ '/trips/search/facets': () => Response.json({ ...FACETAS, precioMin: 50_000, precioMax: 50_000 }) }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Filtros' }))
+    const hoja = await screen.findByRole('dialog')
+    expect(await within(hoja).findByText('$50.000')).toBeTruthy()
+    expect(within(hoja).queryByRole('slider')).toBeNull()
+    cleanup()
+    montar(servidor({ '/trips/search/facets': () => Response.json({ precioMin: null, precioMax: null, empresas: [], tiposBus: [] }) }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Filtros' }))
+    const otra = await screen.findByRole('dialog')
+    expect(await within(otra).findByText('No hay empresas en esta ruta.')).toBeTruthy()
+    expect(within(otra).queryByText('Precio')).toBeNull()
   })
 
   it('cambia la ruta con autocompletado y busca ida y vuelta', async () => {

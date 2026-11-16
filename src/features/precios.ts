@@ -74,7 +74,7 @@ export function pasoAbajo(v: number, l: Limites, pasos = 1): number {
 export function valorEnPosicion(fraccion: number, l: Limites): number {
   const bruto = l.min + Math.min(1, Math.max(0, fraccion)) * (l.max - l.min)
   const candidatos = [l.min, l.max, limitar(Math.round(bruto / PASO_PRECIO) * PASO_PRECIO, l)]
-  return candidatos.reduce((mejor, c) => (Math.abs(c - bruto) < Math.abs(mejor - bruto) ? c : mejor))
+  return candidatos.reduce((mejor, c) => (Math.abs(c - bruto) < Math.abs(mejor - bruto) ? c : mejor), l.min)
 }
 
 /** Rango elegido dentro de los límites (sin filtro = los extremos). */

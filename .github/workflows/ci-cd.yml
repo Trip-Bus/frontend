@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Sonar necesita el historial para saber qué código es nuevo
 
       - uses: actions/setup-node@v4
         with:
@@ -36,8 +38,10 @@ jobs:
       - name: Pruebas
         run: npm run test:coverage
 
+      # Sonar corre en push a develop y en los PR con base develop: así el quality gate
+      # se ve en el PR antes del merge (igual que en los repos del backend).
       - name: SonarQube Cloud
-        if: github.ref == 'refs/heads/develop'
+        if: github.ref == 'refs/heads/develop' || github.base_ref == 'develop'
         uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602 # v6.0.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

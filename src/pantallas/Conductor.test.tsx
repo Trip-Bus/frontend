@@ -69,7 +69,8 @@ const viajes: ViajeConductor[] = [
 describe('viajes del conductor', () => {
   it('muestra viajes asignados, destaca el activo y abre el detalle del viaje', async () => {
     iniciarSesion()
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => Response.json(viajes))
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
+      url.includes('/driver/trips/active') ? Response.json(viajes[0]) : Response.json(viajes))
     vi.stubGlobal('fetch', fetchMock)
     renderConductor()
 
@@ -80,13 +81,28 @@ describe('viajes del conductor', () => {
     expect(screen.getByText('Viaje iniciado. Mantén el GPS activo durante el recorrido.')).toBeTruthy()
     expect(screen.getByText(/Relevo/)).toBeTruthy()
     expect(screen.getByRole('link', { name: /Continuar viaje/ }).getAttribute('href')).toBe('/panel/viaje/trip-active')
-    expect(fetchMock).toHaveBeenCalledOnce()
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/driver/trips')
+    expect(fetchMock.mock.calls.map(([u]) => u)).toEqual(['/api/v1/driver/trips', '/api/v1/driver/trips/active'])
+  })
+
+  it('muestra el viaje nocturno que salió ayer y sigue en su ventana después de medianoche', async () => {
+    iniciarSesion()
+    const nocturno: ViajeConductor = { ...viajes[0], itineraryId: 'trip-nocturno', origen: 'Bogotá', destino: 'Cartagena' }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url.includes('/driver/trips/active') ? Response.json(nocturno) : Response.json([viajes[1]])))
+    renderConductor()
+
+    expect(await screen.findByText('Bogotá → Cartagena')).toBeTruthy()
+    expect(screen.getByText('Tunja → Bucaramanga')).toBeTruthy()
+    expect(screen.getByText('2 viajes asignados')).toBeTruthy()
+    expect(screen.getByRole('link', { name: /Continuar viaje/ }).getAttribute('href')).toBe('/panel/viaje/trip-nocturno')
   })
 
   it('explica el estado vacío cuando no hay asignaciones hoy', async () => {
     iniciarSesion()
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json([])))
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url.includes('/driver/trips/active')
+        ? Response.json({ error: { code: 'NO_ACTIVE_TRIP', message: 'No tiene ningún viaje asignado en curso' } }, { status: 404 })
+        : Response.json([])))
     renderConductor()
 
     expect((await screen.findByRole('status')).textContent).toContain('Hoy no tienes viajes asignados.')

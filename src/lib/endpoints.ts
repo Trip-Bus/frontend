@@ -4,6 +4,7 @@ import type {
   AgrupacionVentas,
   AlertaConductor,
   AlertaViaje,
+  AsignacionConductor,
   AuthResponse,
   BancoPse,
   Bus,
@@ -14,6 +15,7 @@ import type {
   CierreCaja,
   CodigosRecuperacion,
   CondicionesEmpresa,
+  ConductorAsignable,
   ConfiguracionMfa,
   CrearItinerarioRequest,
   CrearOfertaRequest,
@@ -232,6 +234,13 @@ export const api = {
       solicitar<PaginaViajesOperador>('GET', '/operator/trips', { auth: 'requerido', query: filtro }),
     itinerarios: (filtro: FiltroItinerarios) =>
       solicitar<Pagina<ResumenItinerario>>('GET', '/itineraries', { auth: 'requerido', query: filtro }),
+    /** US-121: conductores activos de la empresa (el ADMIN filtra con companyId). */
+    conductores: (companyId?: Uuid) =>
+      solicitar<ConductorAsignable[]>('GET', '/users/drivers', { auth: 'requerido', query: { companyId } }),
+    conductorAsignado: (itineraryId: Uuid) => solicitar<AsignacionConductor[]>('GET', `/trips/${itineraryId}/driver`, conToken),
+    asignarConductor: (itineraryId: Uuid, conductorId: Uuid) =>
+      solicitar<AsignacionConductor>('PUT', `/trips/${itineraryId}/driver`, { auth: 'requerido', body: { conductorId, rol: 'PRINCIPAL' } }),
+    quitarConductor: (itineraryId: Uuid) => solicitar<void>('DELETE', `/trips/${itineraryId}/driver/PRINCIPAL`, conToken),
     programar: (datos: CrearItinerarioRequest) => solicitar<ResumenItinerario>('POST', '/itineraries', { auth: 'requerido', body: datos }),
     programarRecurrente: (datos: ProgramacionRequest) =>
       solicitar<ResultadoProgramacion>('POST', '/itineraries/schedule', { auth: 'requerido', body: datos }),

@@ -13,9 +13,10 @@ import { api } from '@/lib/endpoints'
 import { campoDesdeInstante, fechaHora, instanteDesdeCampo, porcentaje } from '@/lib/formato'
 import type { ResumenItinerario } from '@/lib/tipos'
 
-type Accion = 'salida' | 'bus' | 'cancelar' | 'asientos' | 'historial' | 'ocupacion'
+type Accion = 'conductor' | 'salida' | 'bus' | 'cancelar' | 'asientos' | 'historial' | 'ocupacion'
 
 const ACCIONES: { valor: Accion; texto: string }[] = [
+  { valor: 'conductor', texto: 'Asignar conductor' },
   { valor: 'salida', texto: 'Reprogramar o retrasar' },
   { valor: 'bus', texto: 'Cambiar bus' },
   { valor: 'asientos', texto: 'Bloquear asientos' },
@@ -33,7 +34,7 @@ const TIPO_CAMBIO: Record<string, string> = {
 
 /** O-04: todo lo que se puede hacer con un viaje programado, en una hoja. */
 export function GestionViaje({ viaje, companyId, alCerrar }: { viaje: ResumenItinerario | null; companyId: string | undefined; alCerrar: () => void }) {
-  const [accion, setAccion] = useState<Accion>('salida')
+  const [accion, setAccion] = useState<Accion>('conductor')
   return (
     <Hoja
       abierta={!!viaje}
@@ -44,6 +45,7 @@ export function GestionViaje({ viaje, companyId, alCerrar }: { viaje: ResumenIti
       {viaje && (
         <div className="flex flex-col gap-3 pb-3">
           <Selector etiqueta="¿Qué quieres hacer?" value={accion} onChange={(e) => setAccion(e.target.value as Accion)} opciones={ACCIONES.map((a) => ({ valor: a.valor, texto: a.texto }))} />
+          {accion === 'conductor' && <AsignarConductor v={viaje} />}
           {accion === 'salida' && <CambiarSalida v={viaje} alTerminar={alCerrar} />}
           {accion === 'bus' && <CambiarBus v={viaje} companyId={companyId} alTerminar={alCerrar} />}
           {accion === 'cancelar' && <Cancelar v={viaje} alTerminar={alCerrar} />}
@@ -64,6 +66,82 @@ function useAlCambiar(texto: string, alTerminar: () => void) {
     void queryClient.invalidateQueries({ queryKey: ['operador-viajes'] })
     alTerminar()
   }
+}
+
+/**
+ * US-121: el operador asigna el conductor principal del viaje. Ese conductor lo ve en "Mis viajes" el día de
+ * la salida y puede compartir el GPS dentro de la ventana de rastreo (desde 30 min antes de salir).
+ */
+function AsignarConductor({ v }: { v: ResumenItinerario }) {
+  const queryClient = useQueryClient()
+  const [conductorId, setConductorId] = useState('')
+  const asignados = useQuery({ queryKey: ['conductor-viaje', v.itineraryId], queryFn: () => api.operador.conductorAsignado(v.itineraryId) })
+  const conductores = useQuery({ queryKey: ['conductores', v.companyId], queryFn: () => api.operador.conductores(v.companyId), staleTime: 60_000 })
+  const lista = conductores.data ?? []
+  const principal = asignados.data?.find((a) => a.rol === 'PRINCIPAL') ?? null
+  const nombreDe = (id: string) => {
+    const c = lista.find((x) => x.id === id)
+    return c ? `${c.nombre} (${c.email})` : 'Conductor sin nombre (puede estar inactivo)'
+  }
+  const listo = (texto: string) => {
+    toast(texto)
+    setConductorId('')
+    void queryClient.invalidateQueries({ queryKey: ['conductor-viaje', v.itineraryId] })
+    void queryClient.invalidateQueries({ queryKey: ['operador-viajes'] })
+  }
+  const asignar = useMutation({
+    mutationFn: () => api.operador.asignarConductor(v.itineraryId, conductorId),
+    onSuccess: () => listo(principal ? 'Cambiamos el conductor del viaje.' : 'Asignamos el conductor al viaje.'),
+    onError: (e) => toast(textoError(e)),
+  })
+  const quitar = useMutation({
+    mutationFn: () => api.operador.quitarConductor(v.itineraryId),
+    onSuccess: () => listo('Quitamos el conductor del viaje.'),
+    onError: (e) => toast(textoError(e)),
+  })
+
+  if (v.estado === 'CANCELADO') return <Aviso>Este viaje está cancelado: no se le puede asignar conductor.</Aviso>
+  if (asignados.isPending || conductores.isPending) return <Aviso>Cargando conductores…</Aviso>
+  if (asignados.isError || conductores.isError) {
+    return <Aviso tono="alerta">{textoError(asignados.error ?? conductores.error)}</Aviso>
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (conductorId) asignar.mutate()
+      }}
+      className="flex flex-col gap-3"
+      noValidate
+    >
+      <div className="rounded-[14px] bg-fondo p-3 text-[14px]">
+        <span className="text-texto-2">Conductor asignado</span>
+        <span className="block font-semibold">{principal ? nombreDe(principal.conductorId) : 'Ninguno todavía'}</span>
+        {principal && <span className="block text-[13px] text-texto-2">Desde {fechaHora(principal.asignadoEn)}</span>}
+      </div>
+      {lista.length === 0 ? (
+        <Aviso>Tu empresa no tiene conductores activos. Pide al administrador que cree uno.</Aviso>
+      ) : (
+        <Selector
+          etiqueta={principal ? 'Cambiar por' : 'Conductor'}
+          vacia="Elige el conductor"
+          value={conductorId}
+          onChange={(e) => setConductorId(e.target.value)}
+          opciones={lista.filter((c) => c.id !== principal?.conductorId).map((c) => ({ valor: c.id, texto: `${c.nombre} · ${c.email}` }))}
+        />
+      )}
+      <p className="text-[13px] text-texto-2">El conductor ve el viaje en «Mis viajes» el día de la salida y puede compartir el GPS desde 30 min antes de salir hasta 30 min después de llegar.</p>
+      <Button type="submit" disabled={!conductorId || asignar.isPending}>
+        {asignar.isPending ? 'Asignando…' : principal ? 'Cambiar conductor' : 'Asignar conductor'}
+      </Button>
+      {principal && (
+        <Button type="button" variante="contorno" disabled={quitar.isPending} onClick={() => quitar.mutate()}>
+          {quitar.isPending ? 'Quitando…' : 'Quitar conductor'}
+        </Button>
+      )}
+    </form>
+  )
 }
 
 function CambiarSalida({ v, alTerminar }: { v: ResumenItinerario; alTerminar: () => void }) {

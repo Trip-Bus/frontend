@@ -10,6 +10,7 @@ import { BotonVolver } from '@/components/marca/BotonVolver'
 import { Esqueleto, PantallaError } from '@/components/marca/Estados'
 import { LiveDot } from '@/components/marca/LiveDot'
 import { Pantalla } from '@/components/marca/Pantalla'
+import { MapaGoogle } from '@/components/marca/MapaGoogle'
 import { Button } from '@/components/ui/button'
 import { calcularAvance, crearProyeccion, haceCuanto, minutosDeRetraso, segundosDesde } from '@/features/seguimiento'
 import { useAhora } from '@/hooks/useAhora'
@@ -125,6 +126,15 @@ export function VistaEnVivo({ itineraryId, compartido = false }: { itineraryId: 
   })
 
   const proyeccion = useMemo(() => (s && s.paradas.length > 0 ? crearProyeccion(s.paradas, ANCHO, ALTO, 48, 92) : null), [s])
+  // Google Maps: mismos datos que el SVG. Memorizados para que el mapa no se redibuje en cada segundo del reloj.
+  const paradasSeg = s?.paradas
+  const posicionSeg = s?.posicion
+  const paradasMapa = useMemo(() => (paradasSeg ?? []).map((p) => ({ lat: p.lat, lng: p.lng, nombre: p.nombre })), [paradasSeg])
+  const recorridoMapa = useMemo(() => {
+    if (!paradasSeg || !posicionSeg) return []
+    const av = calcularAvance(paradasSeg, posicionSeg)
+    return av ? [...paradasSeg.slice(0, av.ultimaParada + 1).map((p) => ({ lat: p.lat, lng: p.lng })), { lat: posicionSeg.lat, lng: posicionSeg.lng }] : []
+  }, [paradasSeg, posicionSeg])
 
   if (seguimiento.isError) {
     return <PantallaError titulo="No pudimos ubicar el viaje" error={seguimiento.error} reintentar={() => seguimiento.refetch()} />
@@ -183,51 +193,64 @@ export function VistaEnVivo({ itineraryId, compartido = false }: { itineraryId: 
   return (
     <Pantalla aSangre>
       <div className="relative">
-        <svg
-          viewBox={`0 0 ${ANCHO} ${ALTO}`}
+        <MapaGoogle
           className="block h-[min(44dvh,340px)] w-full bg-[#e8ebe3]"
-          preserveAspectRatio="xMidYMid slice"
-          role="img"
-          aria-label={
+          etiqueta={
             bus && avance
               ? `Mapa: el bus va entre ${s.paradas[avance.ultimaParada]?.nombre} y ${s.paradas[Math.min(avance.ultimaParada + 1, s.paradas.length - 1)]?.nombre}`
               : `Mapa de la ruta de ${s.origen} a ${s.destino}`
           }
-        >
-          <path d={linea(puntos)} fill="none" stroke="#0d1411" strokeOpacity="0.28" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 9" />
-          {recorrido.length > 1 && (
-            <path d={linea(recorrido)} fill="none" stroke="#0d1411" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-          )}
-          {puntos.map((p, i) => {
-            const extremo = i === 0 || i === puntos.length - 1
-            return (
-              <g key={s.paradas[i].orden}>
-                <circle cx={p.x} cy={p.y} r={extremo ? 7 : 4.5} fill={i === puntos.length - 1 ? '#0d1411' : '#ffffff'} stroke="#0d1411" strokeWidth="3" />
-                <text
-                  x={p.x + (p.x > ANCHO / 2 ? -12 : 12)}
-                  y={p.y + 4}
-                  textAnchor={p.x > ANCHO / 2 ? 'end' : 'start'}
-                  fontFamily="Geist Variable, sans-serif"
-                  fontSize={extremo ? 14 : 12}
-                  fontWeight={extremo ? 700 : 500}
-                  fill={extremo ? '#0d1411' : '#2e3632'}
-                  paintOrder="stroke"
-                  stroke="#e8ebe3"
-                  strokeWidth="4"
-                >
-                  {s.paradas[i].nombre}
-                </text>
-              </g>
-            )
-          })}
-          {bus && mostrarBus && (
-            <g transform={`translate(${bus.x} ${bus.y})`}>
-              {!sinSenal && <circle r="10" className="tb-latido" style={{ fill: 'var(--acento)', animation: 'tb-latido 1.6s var(--ease-out) infinite', transformBox: 'fill-box', transformOrigin: 'center' }} />}
-              <circle r="11" style={{ fill: sinSenal ? '#8c948e' : 'var(--acento)' }} stroke="#0d1411" strokeWidth="3" />
-              <circle r="3.5" fill="#0d1411" />
-            </g>
-          )}
-        </svg>
+          paradas={paradasMapa}
+          recorrido={recorridoMapa}
+          buses={s.posicion && mostrarBus ? [{ id: s.busId ?? 'bus', lat: s.posicion.lat, lng: s.posicion.lng, sinSenal, etiqueta: 'Tu bus' }] : []}
+          respaldo={
+            <svg
+              viewBox={`0 0 ${ANCHO} ${ALTO}`}
+              className="block h-[min(44dvh,340px)] w-full bg-[#e8ebe3]"
+              preserveAspectRatio="xMidYMid slice"
+              role="img"
+              aria-label={
+                bus && avance
+                  ? `Mapa: el bus va entre ${s.paradas[avance.ultimaParada]?.nombre} y ${s.paradas[Math.min(avance.ultimaParada + 1, s.paradas.length - 1)]?.nombre}`
+                  : `Mapa de la ruta de ${s.origen} a ${s.destino}`
+              }
+            >
+              <path d={linea(puntos)} fill="none" stroke="#0d1411" strokeOpacity="0.28" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="2 9" />
+              {recorrido.length > 1 && (
+                <path d={linea(recorrido)} fill="none" stroke="#0d1411" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+              )}
+              {puntos.map((p, i) => {
+                const extremo = i === 0 || i === puntos.length - 1
+                return (
+                  <g key={s.paradas[i].orden}>
+                    <circle cx={p.x} cy={p.y} r={extremo ? 7 : 4.5} fill={i === puntos.length - 1 ? '#0d1411' : '#ffffff'} stroke="#0d1411" strokeWidth="3" />
+                    <text
+                      x={p.x + (p.x > ANCHO / 2 ? -12 : 12)}
+                      y={p.y + 4}
+                      textAnchor={p.x > ANCHO / 2 ? 'end' : 'start'}
+                      fontFamily="Geist Variable, sans-serif"
+                      fontSize={extremo ? 14 : 12}
+                      fontWeight={extremo ? 700 : 500}
+                      fill={extremo ? '#0d1411' : '#2e3632'}
+                      paintOrder="stroke"
+                      stroke="#e8ebe3"
+                      strokeWidth="4"
+                    >
+                      {s.paradas[i].nombre}
+                    </text>
+                  </g>
+                )
+              })}
+              {bus && mostrarBus && (
+                <g transform={`translate(${bus.x} ${bus.y})`}>
+                  {!sinSenal && <circle r="10" className="tb-latido" style={{ fill: 'var(--acento)', animation: 'tb-latido 1.6s var(--ease-out) infinite', transformBox: 'fill-box', transformOrigin: 'center' }} />}
+                  <circle r="11" style={{ fill: sinSenal ? '#8c948e' : 'var(--acento)' }} stroke="#0d1411" strokeWidth="3" />
+                  <circle r="3.5" fill="#0d1411" />
+                </g>
+              )}
+            </svg>
+          }
+        />
 
         <div className="pt-seguro absolute inset-x-0 top-0 flex items-start justify-between px-5">
           <BotonVolver />

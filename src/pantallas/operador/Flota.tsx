@@ -11,6 +11,7 @@ import { buttonVariants } from '@/components/ui/button-variants'
 import { Button } from '@/components/ui/button'
 import { Hoja } from '@/components/ui/hoja'
 import { useEmpresaActiva } from '@/features/empresa'
+import { MapaGoogle } from '@/components/marca/MapaGoogle'
 import { crearProyeccion } from '@/features/seguimiento'
 import { esAlertaMaxima, ordenarAlertas, sonarAlerta } from '@/features/sonido'
 import { textoError } from '@/lib/api'
@@ -131,21 +132,28 @@ function MapaFlota({ viajes }: { viajes: ViajeFlota[] }) {
   if (!proyeccion) return <p className="rounded-tarjeta bg-superficie p-4 text-[14px] text-texto-2">Ningún bus ha enviado su ubicación todavía.</p>
   return (
     <figure className="flex flex-col gap-2">
-      <svg viewBox={`0 0 ${ANCHO} ${ALTO}`} role="img" aria-label={`Mapa de la flota con ${conPosicion.length} buses`} className="w-full rounded-tarjeta bg-[#e8ebe3]">
-        {conPosicion.map((v) => {
-          const p = proyeccion(v.posicion!)
-          const alerta = (v.alertas?.abiertas ?? 0) > 0
-          return (
-            <g key={v.itineraryId} transform={`translate(${p.x} ${p.y})`}>
-              {alerta && <circle r="16" fill="none" stroke="#d7263d" strokeWidth="3" />}
-              <circle r="9" fill={colorDe(v).color} stroke="#0d1411" strokeWidth="2.5" />
-              <text y="-14" textAnchor="middle" fontSize="12" fontWeight="700" fill="#0d1411" paintOrder="stroke" stroke="#e8ebe3" strokeWidth="4">
-                {v.destino}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
+      <MapaGoogle
+        className="h-[360px] w-full overflow-hidden rounded-tarjeta bg-[#e8ebe3]"
+        etiqueta={`Mapa de la flota con ${conPosicion.length} buses`}
+        buses={conPosicion.map((v) => ({ id: v.itineraryId, lat: v.posicion!.lat, lng: v.posicion!.lng, color: colorDe(v).color, etiqueta: `${v.origen} → ${v.destino}` }))}
+        respaldo={
+          <svg viewBox={`0 0 ${ANCHO} ${ALTO}`} role="img" aria-label={`Mapa de la flota con ${conPosicion.length} buses`} className="w-full rounded-tarjeta bg-[#e8ebe3]">
+            {conPosicion.map((v) => {
+              const p = proyeccion(v.posicion!)
+              const alerta = (v.alertas?.abiertas ?? 0) > 0
+              return (
+                <g key={v.itineraryId} transform={`translate(${p.x} ${p.y})`}>
+                  {alerta && <circle r="16" fill="none" stroke="#d7263d" strokeWidth="3" />}
+                  <circle r="9" fill={colorDe(v).color} stroke="#0d1411" strokeWidth="2.5" />
+                  <text y="-14" textAnchor="middle" fontSize="12" fontWeight="700" fill="#0d1411" paintOrder="stroke" stroke="#e8ebe3" strokeWidth="4">
+                    {v.destino}
+                  </text>
+                </g>
+              )
+            })}
+          </svg>
+        }
+      />
       <figcaption>
         <ul aria-label="Convenciones" className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] font-semibold">
           {Object.values(COLOR_RASTREO).map((c) => (

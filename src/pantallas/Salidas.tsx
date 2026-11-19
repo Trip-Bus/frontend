@@ -182,7 +182,7 @@ export function Salidas() {
         ) : (
           <>
             <Regla viajes={viajes} elegida={sel} alElegir={setElegida} />
-            <ul className="scroll-hoja flex min-h-0 flex-1 flex-col gap-2.5 px-5 pt-3 pb-[calc(20px+env(safe-area-inset-bottom,0px))]">
+            <ul className="flex min-h-0 flex-1 flex-col gap-2.5 px-5 pt-3 pb-[calc(20px+env(safe-area-inset-bottom,0px))]">
               {viajes.map((v, i) => (
                 <li key={`${v.itineraryId}-${v.fromOrden ?? 0}`} className="entra" style={{ animationDelay: `${Math.min(i, 4) * 50}ms` }}>
                   <TarjetaViaje viaje={v} elegida={i === sel} masBarato={i === masBarato} alAbrir={() => void navigate(rutaAsientos(v, busqueda.pasajeros))} />

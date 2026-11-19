@@ -205,7 +205,7 @@ export function Reserva() {
         <ContadorRetencion hasta={r.expiraEn} totalSegundos={r.extendido ? 900 : 600} />
       </header>
 
-      <form id="form-viajeros" onSubmit={enviar} noValidate className="scroll-hoja flex min-h-0 flex-1 flex-col gap-3.5 px-5 pt-4 pb-6">
+      <form id="form-viajeros" onSubmit={enviar} noValidate className="flex min-h-0 flex-1 flex-col gap-3.5 px-5 pt-4 pb-6">
         <section aria-label="Tu viaje" className="flex flex-col gap-3 rounded-tarjeta bg-tinta p-4 text-white">
           {d ? (
             <>

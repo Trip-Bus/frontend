@@ -173,7 +173,10 @@
   .carril::-webkit-scrollbar { display: none; }
   .carril > * { scroll-snap-align: start; flex-shrink: 0; }
 
-  /* Contenido desplazable dentro de una hoja: rebota sin mover la página */
+  /* Contenido desplazable dentro de una hoja: rebota sin mover la página.
+     Solo para contenedores con alto limitado (hojas, listas con max-h). En un contenedor que crece con su
+     contenido, overflow:auto + overscroll-behavior:contain lo vuelve un contenedor de scroll que NO puede
+     desplazarse y además corta el desplazamiento de la página: el dedo sobre la lista no mueve nada. */
   .scroll-hoja {
     overflow-y: auto;
     overscroll-behavior: contain;

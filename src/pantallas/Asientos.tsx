@@ -246,7 +246,7 @@ export function Asientos() {
         </div>
       )}
 
-      <div className="scroll-hoja min-h-0 flex-1 px-5 pt-3 pb-6">
+      <div className="min-h-0 flex-1 px-5 pt-3 pb-6">
         {!piso ? (
           <Esqueleto bloques={[520]} className="px-0 pt-0" />
         ) : (

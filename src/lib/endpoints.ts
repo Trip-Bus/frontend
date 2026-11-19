@@ -4,6 +4,7 @@ import type {
   AgrupacionVentas,
   AlertaConductor,
   AlertaViaje,
+  AsignacionConductor,
   AuthResponse,
   BancoPse,
   Bus,
@@ -14,6 +15,7 @@ import type {
   CierreCaja,
   CodigosRecuperacion,
   CondicionesEmpresa,
+  ConductorAsignable,
   ConfiguracionMfa,
   CrearItinerarioRequest,
   CrearOfertaRequest,
@@ -118,6 +120,16 @@ import type {
 const PDF = 'application/pdf'
 const CSV = 'text/csv'
 const conToken = { auth: 'requerido' } as const
+
+/** "2026-11-17" → instante ISO del inicio de ese día en Colombia (UTC-5, sin horario de verano). */
+function inicioDelDiaColombia(ymd?: string): string | undefined {
+  return ymd ? new Date(`${ymd}T00:00:00-05:00`).toISOString() : undefined
+}
+
+/** "2026-11-17" → instante ISO del inicio del día siguiente en Colombia (fin exclusivo del día). */
+function finDelDiaColombia(ymd?: string): string | undefined {
+  return ymd ? new Date(new Date(`${ymd}T00:00:00-05:00`).getTime() + 86_400_000).toISOString() : undefined
+}
 
 /**
  * Todas las llamadas del frontend al API Gateway, agrupadas por microservicio.
@@ -232,6 +244,13 @@ export const api = {
       solicitar<PaginaViajesOperador>('GET', '/operator/trips', { auth: 'requerido', query: filtro }),
     itinerarios: (filtro: FiltroItinerarios) =>
       solicitar<Pagina<ResumenItinerario>>('GET', '/itineraries', { auth: 'requerido', query: filtro }),
+    /** US-121: conductores activos de la empresa (el ADMIN filtra con companyId). */
+    conductores: (companyId?: Uuid) =>
+      solicitar<ConductorAsignable[]>('GET', '/users/drivers', { auth: 'requerido', query: { companyId } }),
+    conductorAsignado: (itineraryId: Uuid) => solicitar<AsignacionConductor[]>('GET', `/trips/${itineraryId}/driver`, conToken),
+    asignarConductor: (itineraryId: Uuid, conductorId: Uuid) =>
+      solicitar<AsignacionConductor>('PUT', `/trips/${itineraryId}/driver`, { auth: 'requerido', body: { conductorId, rol: 'PRINCIPAL' } }),
+    quitarConductor: (itineraryId: Uuid) => solicitar<void>('DELETE', `/trips/${itineraryId}/driver/PRINCIPAL`, conToken),
     programar: (datos: CrearItinerarioRequest) => solicitar<ResumenItinerario>('POST', '/itineraries', { auth: 'requerido', body: datos }),
     programarRecurrente: (datos: ProgramacionRequest) =>
       solicitar<ResultadoProgramacion>('POST', '/itineraries/schedule', { auth: 'requerido', body: datos }),
@@ -413,10 +432,17 @@ export const api = {
     duplicar: (id: Uuid, datos: DuplicarOfertaRequest) =>
       solicitar<Oferta>('POST', `/offers/${id}/duplicate`, { auth: 'requerido', body: datos }),
     metricas: (id: Uuid) => solicitar<MetricasOferta>('GET', `/offers/${id}/metrics`, conToken),
+    /** desde/hasta son días de Colombia (inclusivos); flash-offers los recibe como instantes ISO. */
     delOperador: (filtro: FiltroOfertasOperador) =>
-      solicitar<Pagina<OfertaOperador>>('GET', '/operator/offers', { auth: 'requerido', query: filtro }),
+      solicitar<Pagina<OfertaOperador>>('GET', '/operator/offers', {
+        auth: 'requerido',
+        query: { ...filtro, desde: inicioDelDiaColombia(filtro.desde), hasta: finDelDiaColombia(filtro.hasta) },
+      }),
     metricasOperador: (desde: string, hasta: string) =>
-      solicitar<MetricasOperador>('GET', '/operator/offers/metrics', { auth: 'requerido', query: { desde, hasta } }),
+      solicitar<MetricasOperador>('GET', '/operator/offers/metrics', {
+        auth: 'requerido',
+        query: { desde: inicioDelDiaColombia(desde), hasta: finDelDiaColombia(hasta) },
+      }),
     /** P-11: hasta 10 rutas seguidas. */
     rutasSeguidas: () => solicitar<RutaSeguida[]>('GET', '/offers/follows', conToken),
     seguirRuta: (origen: string, destino: string) =>

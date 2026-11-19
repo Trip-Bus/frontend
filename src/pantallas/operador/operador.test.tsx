@@ -141,6 +141,8 @@ describe('viajes del operador', () => {
       '/seats/itineraries/i-1/blocks': () => Response.json({ itineraryId: 'i-1', cambiados: ['1', '2'], sinCambio: [] }),
       '/seats/itineraries/i-1/occupancy': () => Response.json({ itineraryId: 'i-1', capacidad: 40, disponibles: 30, retenidos: 1, vendidos: 9, enOferta: 0, bloqueados: 2, enTramos: 0, porcentajeOcupacion: 22.5, tasaAbandono: 3 }),
       '/admin/itineraries/i-1/cancel': () => Response.json({}),
+      '/users/drivers': () => Response.json([]),
+      '/trips/i-1/driver': () => Response.json([]),
       '/itineraries?': () => pagina([itinerario]),
     })
     montar(fetchMock, () => h(Viajes))
@@ -148,6 +150,7 @@ describe('viajes del operador', () => {
     const elegir = (accion: string) => fireEvent.change(screen.getByLabelText('¿Qué quieres hacer?'), { target: { value: accion } })
 
     await abrir()
+    elegir('salida')
     fireEvent.change(await screen.findByLabelText('Nueva salida (hora de Colombia)'), { target: { value: '2099-01-01T08:00' } })
     fireEvent.change(screen.getByLabelText('Motivo (lo ven los pasajeros)'), { target: { value: 'Cierre de vía' } })
     fireEvent.click(screen.getByRole('button', { name: 'Guardar la nueva salida' }))
@@ -178,6 +181,65 @@ describe('viajes del operador', () => {
     fireEvent.change(screen.getByLabelText('Motivo de la cancelación'), { target: { value: 'Paro' } })
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar el viaje' }))
     await waitFor(() => expect(posts(fetchMock, '/cancel')).toHaveLength(1))
+  })
+
+  it('asigna, cambia y quita el conductor de un viaje (US-121)', async () => {
+    let asignados: unknown[] = []
+    const fetchMock = servidor({
+      '/users/drivers': () =>
+        Response.json([
+          { id: 'cond-1', nombre: 'Ana Ruiz', email: 'ana@tripbus.co' },
+          { id: 'cond-2', nombre: 'Luis Gómez', email: 'luis@tripbus.co' },
+        ]),
+      '/trips/i-1/driver': (_u, init) => {
+        if (init?.method === 'PUT') {
+          const { conductorId } = JSON.parse(String(init.body))
+          asignados = [{ itineraryId: 'i-1', conductorId, rol: 'PRINCIPAL', asignadoPor: 'op', asignadoEn: '2099-01-01T10:00:00Z' }]
+          return Response.json(asignados[0])
+        }
+        if (init?.method === 'DELETE') {
+          asignados = []
+          return new Response(null, { status: 204 })
+        }
+        return Response.json(asignados)
+      },
+      '/itineraries?': () => pagina([itinerario]),
+    })
+    montar(fetchMock, () => h(Viajes))
+    fireEvent.click(await screen.findByRole('button', { name: 'Gestionar' }))
+
+    expect(await screen.findByText('Ninguno todavía')).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Conductor'), { target: { value: 'cond-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Asignar conductor' }))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Asignamos el conductor al viaje.'))
+    expect(JSON.parse(String(posts(fetchMock, '/trips/i-1/driver', 'PUT')[0][1]?.body))).toEqual({ conductorId: 'cond-1', rol: 'PRINCIPAL' })
+    expect(await screen.findByText('Ana Ruiz (ana@tripbus.co)')).toBeTruthy()
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/users/drivers?companyId=c-1'))).toBe(true)
+
+    fireEvent.change(screen.getByLabelText('Cambiar por'), { target: { value: 'cond-2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Cambiar conductor' }))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('Cambiamos el conductor del viaje.'))
+    expect(await screen.findByText('Luis Gómez (luis@tripbus.co)')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar conductor' }))
+    await waitFor(() => expect(posts(fetchMock, '/trips/i-1/driver/PRINCIPAL', 'DELETE')).toHaveLength(1))
+    expect(await screen.findByText('Ninguno todavía')).toBeTruthy()
+  })
+
+  it('muestra el error del backend al asignar un conductor con cruce de horario', async () => {
+    const fetchMock = servidor({
+      '/users/drivers': () => Response.json([{ id: 'cond-1', nombre: 'Ana Ruiz', email: 'ana@tripbus.co' }]),
+      '/trips/i-1/driver': (_u, init) =>
+        init?.method === 'PUT'
+          ? Response.json({ error: { code: 'DRIVER_SCHEDULE_CONFLICT', message: 'El conductor ya tiene un viaje asignado que se cruza con este', details: {} } }, { status: 409 })
+          : Response.json([]),
+      '/itineraries?': () => pagina([itinerario]),
+    })
+    montar(fetchMock, () => h(Viajes))
+    fireEvent.click(await screen.findByRole('button', { name: 'Gestionar' }))
+    fireEvent.change(await screen.findByLabelText('Conductor'), { target: { value: 'cond-1' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Asignar conductor' }))
+    await waitFor(() => expect(toast).toHaveBeenCalledWith('El conductor ya tiene un viaje asignado que se cruza con este'))
   })
 
   it('separa la lista de puestos', () => {

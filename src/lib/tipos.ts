@@ -651,6 +651,18 @@ export type ResumenItinerario = {
   moneda: string
 }
 
+/** US-121: conductor activo de la empresa que se puede asignar a un viaje (GET /users/drivers). */
+export type ConductorAsignable = { id: Uuid; nombre: string; email: string }
+
+/** US-121: conductor asignado a un viaje (GET/PUT /trips/{id}/driver). */
+export type AsignacionConductor = {
+  itineraryId: Uuid
+  conductorId: Uuid
+  rol: 'PRINCIPAL' | 'RELEVO'
+  asignadoPor: Uuid
+  asignadoEn: FechaIso
+}
+
 export type CrearItinerarioRequest = { routeId: Uuid; busId: Uuid; fechaSalida: FechaIso; precioBase: number }
 
 export type DiaSemana = 'LUNES' | 'MARTES' | 'MIERCOLES' | 'JUEVES' | 'VIERNES' | 'SABADO' | 'DOMINGO'

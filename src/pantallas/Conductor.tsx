@@ -5,6 +5,7 @@ import { BarraInferior } from '@/components/marca/BarraInferior'
 import { Aviso, Esqueleto, PantallaError } from '@/components/marca/Estados'
 import { Pantalla } from '@/components/marca/Pantalla'
 import { buttonVariants } from '@/components/ui/button-variants'
+import { ApiError } from '@/lib/api'
 import { api } from '@/lib/endpoints'
 import { fechaCorta, horaCorta, plural } from '@/lib/formato'
 import type { ViajeConductor } from '@/lib/tipos'
@@ -18,10 +19,28 @@ const ESTADO: Record<string, string> = {
   CANCELADO: 'Cancelado',
 }
 
+/**
+ * Viajes de hoy (por fecha de salida) más el que esté ahora en su ventana de rastreo aunque haya salido ayer:
+ * un viaje nocturno (sale 22:00, llega 07:00) sigue visible después de medianoche para iniciarlo, compartir
+ * el GPS o finalizarlo.
+ */
+async function viajesDeHoy(): Promise<ViajeConductor[]> {
+  const [hoy, activo] = await Promise.all([
+    api.conductor.misViajes(),
+    api.conductor.viajeActivo().catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) return null
+      throw e
+    }),
+  ])
+  const lista = Array.isArray(hoy) ? hoy : []
+  if (!activo || typeof activo.itineraryId !== 'string' || lista.some((v) => v.itineraryId === activo.itineraryId)) return lista
+  return [activo, ...lista]
+}
+
 export function Conductor() {
   const viajes = useQuery({
     queryKey: ['conductor', 'viajes', 'hoy'],
-    queryFn: () => api.conductor.misViajes(),
+    queryFn: viajesDeHoy,
     staleTime: 30_000,
   })
 

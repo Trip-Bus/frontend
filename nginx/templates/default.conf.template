@@ -50,6 +50,13 @@ server {
         proxy_send_timeout 75s;
     }
 
+    # ---- Configuración en tiempo de ejecución (clave de Google Maps del contenedor) ----
+    location = /config.js {
+        default_type application/javascript;
+        add_header Cache-Control "no-store";
+        return 200 'window.__TRIPBUS_CONFIG__={googleMapsKey:"${GOOGLE_MAPS_KEY}"};';
+    }
+
     location = /salud {
         access_log off;
         default_type text/plain;
